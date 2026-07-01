@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuickLend Ontario — Loan Application</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --primary: #1a56db; --primary-dark: #1e429f;
+      --success: #057a55; --warning: #c27803;
+      --danger: #c81e1e; --orange: #e3722b;
+      --bg: #f3f4f6; --card: #ffffff;
+      --border: #e5e7eb; --text: #111827;
+      --muted: #6b7280; --radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    nav { background: var(--primary-dark); color: #fff; padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 60px; }
+    nav .logo { font-size: 1.2rem; font-weight: 700; }
+    nav .logo span { color: #93c5fd; }
+    nav button { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3); color: #fff; padding: .4rem 1rem; border-radius: 6px; cursor: pointer; font-size: .85rem; }
+    nav button:hover { background: rgba(255,255,255,.25); }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .hero { background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%); color: #fff; padding: 4rem 2rem 3rem; text-align: center; }
+    .hero h1 { font-size: 2rem; font-weight: 800; margin-bottom: .75rem; }
+    .hero p { font-size: 1.05rem; opacity: .85; max-width: 500px; margin: 0 auto 1.5rem; }
+    .hero .badges { display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; }
+    .badge { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25); padding: .3rem .8rem; border-radius: 20px; font-size: .8rem; }
+
+    .form-wrap { max-width: 680px; margin: -2rem auto 3rem; padding: 0 1rem; }
+    .card { background: var(--card); border-radius: var(--radius); box-shadow: 0 4px 20px rgba(0,0,0,.08); overflow: hidden; }
+    .card-header { background: #f9fafb; border-bottom: 1px solid var(--border); padding: 1.25rem 1.75rem; }
+    .card-header h2 { font-size: 1rem; font-weight: 700; }
+    .card-header p { font-size: .85rem; color: var(--muted); margin-top: .2rem; }
+    .card-body { padding: 1.75rem; }
+
+    .section-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--primary); margin: 1.5rem 0 .75rem; padding-bottom: .4rem; border-bottom: 2px solid #dbeafe; }
+    .section-label:first-child { margin-top: 0; }
+
+    .row { display: grid; gap: 1rem; }
+    .row-2 { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 500px) { .row-2 { grid-template-columns: 1fr; } }
+
+    .field { display: flex; flex-direction: column; gap: .35rem; }
+    label { font-size: .82rem; font-weight: 600; color: #374151; }
+    label .req { color: var(--danger); margin-left: 2px; }
+    input, select { border: 1.5px solid var(--border); border-radius: 7px; padding: .6rem .85rem; font-size: .9rem; color: var(--text); background: #fff; transition: border-color .15s; width: 100%; }
+    input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,86,219,.1); }
+    input.error, select.error { border-color: var(--danger); }
+    .hint { font-size: .76rem; color: var(--muted); }
+
+    .upload-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all .15s; position: relative; background: #f9fafb; }
+    .upload-zone:hover, .upload-zone.drag { border-color: var(--primary); background: #eff6ff; }
+    .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; border: none; }
+    .upload-zone .icon { font-size: 1.8rem; margin-bottom: .4rem; }
+    .upload-zone p { font-size: .85rem; color: var(--muted); }
+    .upload-zone strong { color: var(--primary); }
+    .file-list { margin-top: .75rem; display: flex; flex-direction: column; gap: .4rem; }
+    .file-item { background: #dbeafe; border-radius: 5px; padding: .35rem .75rem; font-size: .8rem; display: flex; align-items: center; justify-content: space-between; color: var(--primary-dark); }
+    .file-item button { background: none; border: none; cursor: pointer; color: var(--danger); font-size: 1rem; padding: 0; line-height: 1; }
+
+    .upload-progress { margin-top: .75rem; display: none; }
+    .upload-progress.show { display: block; }
+    .progress-bar-bg { background: #e5e7eb; border-radius: 99px; height: 8px; overflow: hidden; margin-top: .3rem; }
+    .progress-bar-fill { height: 100%; background: var(--primary); border-radius: 99px; transition: width .3s; }
+    .progress-label { font-size: .78rem; color: var(--muted); }
+
+    .disclaimer { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 7px; padding: .85rem 1rem; font-size: .78rem; color: #92400e; margin-top: 1.25rem; line-height: 1.5; }
+
+    .submit-btn { width: 100%; background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: .85rem; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 1.5rem; transition: background .15s; }
+    .submit-btn:hover { background: var(--primary-dark); }
+    .submit-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+
+    .success-wrap { max-width: 480px; margin: 3rem auto; padding: 0 1rem; }
+    .ref-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin: 1.25rem 0; font-size: .85rem; }
+    .ref-box strong { display: block; font-size: 1.3rem; color: var(--primary); letter-spacing: .05em; margin-top: .25rem; }
+
+    .login-wrap { max-width: 380px; margin: 4rem auto; padding: 0 1rem; }
+    .login-wrap .card-body { padding: 2rem; }
+    .login-wrap h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 1.25rem; text-align: center; }
+
+    .dash-wrap { max-width: 1100px; margin: 2rem auto; padding: 0 1rem 3rem; }
+    .dash-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+    .dash-header h2 { font-size: 1.3rem; font-weight: 800; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    @media (max-width: 700px) { .stats { grid-template-columns: 1fr 1fr; } }
+    .stat-card { background: var(--card); border-radius: var(--radius); padding: 1rem 1.25rem; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    .stat-card .label { font-size: .75rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+    .stat-card .value { font-size: 1.6rem; font-weight: 800; margin-top: .2rem; }
+
+    .app-grid { display: flex; flex-direction: column; gap: 1rem; }
+    .app-card { background: var(--card); border-radius: var(--radius); box-shadow: 0 2px 8px rgba(0,0,0,.06); overflow: hidden; border-left: 5px solid var(--border); }
+    .app-card.score-high   { border-left-color: var(--success); }
+    .app-card.score-medium { border-left-color: var(--warning); }
+    .app-card.score-low    { border-left-color: var(--orange); }
+    .app-card.score-poor   { border-left-color: var(--danger); }
+
+    .app-card-top { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.25rem; cursor: pointer; }
+    .score-circle { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem; flex-shrink: 0; color: #fff; }
+    .score-circle.high   { background: var(--success); }
+    .score-circle.medium { background: var(--warning); }
+    .score-circle.low    { background: var(--orange); }
+    .score-circle.poor   { background: var(--danger); }
+
+    .app-info { flex: 1; }
+    .app-info .name { font-weight: 700; font-size: .95rem; }
+    .app-info .meta { font-size: .8rem; color: var(--muted); margin-top: .15rem; }
+
+    .pill { padding: .25rem .7rem; border-radius: 20px; font-size: .75rem; font-weight: 700; }
+    .pill.high   { background: #d1fae5; color: var(--success); }
+    .pill.medium { background: #fef3c7; color: var(--warning); }
+    .pill.low    { background: #ffedd5; color: var(--orange); }
+    .pill.poor   { background: #fee2e2; color: var(--danger); }
+
+    .app-card-details { border-top: 1px solid var(--border); padding: 1.25rem; display: none; background: #f9fafb; }
+    .app-card-details.open { display: block; }
+    .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.25rem; }
+    @media (max-width: 600px) { .detail-grid { grid-template-columns: 1fr 1fr; } }
+    .detail-item .d-label { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .detail-item .d-val   { font-size: .9rem; font-weight: 600; margin-top: .15rem; }
+
+    .score-breakdown h4 { font-size: .82rem; font-weight: 700; margin-bottom: .75rem; color: #374151; }
+    .breakdown-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; font-size: .82rem; }
+    .breakdown-row .b-label { width: 160px; flex-shrink: 0; color: var(--muted); }
+    .breakdown-row .b-bar { flex: 1; background: #e5e7eb; border-radius: 99px; height: 7px; overflow: hidden; }
+    .breakdown-row .b-fill { height: 100%; border-radius: 99px; background: var(--primary); }
+    .breakdown-row .b-pts { width: 50px; text-align: right; font-weight: 700; }
+
+    .file-links { margin-top: 1rem; }
+    .file-links h4 { font-size: .82rem; font-weight: 700; margin-bottom: .5rem; color: #374151; }
+    .file-link-item { display: inline-block; background: #dbeafe; color: var(--primary-dark); border-radius: 5px; padding: .3rem .7rem; font-size: .78rem; text-decoration: none; margin: .2rem .2rem 0 0; font-weight: 600; }
+    .file-link-item:hover { background: #bfdbfe; }
+
+    .action-row { display: flex; gap: .75rem; margin-top: 1.25rem; flex-wrap: wrap; }
+    .btn-approve { background: var(--success); color: #fff; border: none; border-radius: 7px; padding: .5rem 1.1rem; font-size: .85rem; font-weight: 700; cursor: pointer; }
+    .btn-decline { background: var(--danger);  color: #fff; border: none; border-radius: 7px; padding: .5rem 1.1rem; font-size: .85rem; font-weight: 700; cursor: pointer; }
+    .btn-neutral { background: #fff; color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: .5rem 1.1rem; font-size: .85rem; font-weight: 600; cursor: pointer; }
+
+    .status-badge { display: inline-block; padding: .2rem .65rem; border-radius: 20px; font-size: .75rem; font-weight: 700; margin-left: .5rem; }
+    .status-badge.approved { background: #d1fae5; color: var(--success); }
+    .status-badge.declined { background: #fee2e2; color: var(--danger); }
+
+    .empty-state { text-align: center; padding: 3rem; color: var(--muted); }
+    .empty-state .icon { font-size: 2.5rem; margin-bottom: .75rem; }
+    .loading-spinner { text-align: center; padding: 3rem; color: var(--muted); }
+
+    #toast { position: fixed; bottom: 2rem; right: 2rem; background: #111827; color: #fff; padding: .75rem 1.25rem; border-radius: 8px; font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 999; }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">Quick<span>Lend</span> Ontario</div>
+  <button onclick="showOwnerLogin()">Owner Login</button>
+</nav>
+<div id="toast"></div>
+
+<!-- ══ PAGE: APPLICATION ══ -->
+<div id="page-apply" class="page active">
+  <div class="hero">
+    <h1>Apply for a Personal Loan</h1>
+    <p>Get up to $15,000 fast. Fill in your details and upload your documents — we'll review and get back to you.</p>
+    <div class="badges">
+      <span class="badge">🏦 Ontario Licensed</span>
+      <span class="badge">🔒 Secure Upload</span>
+      <span class="badge">⚡ Quick Decision</span>
+    </div>
+  </div>
+
+  <div class="form-wrap">
+    <div class="card">
+      <div class="card-header">
+        <h2>Loan Application Form</h2>
+        <p>All fields marked <span style="color:var(--danger)">*</span> are required</p>
+      </div>
+      <div class="card-body">
+        <form id="appForm" novalidate>
+
+          <div class="section-label">Personal Information</div>
+          <div class="row row-2">
+            <div class="field"><label>First Name <span class="req">*</span></label><input type="text" id="firstName" placeholder="e.g. Sarah" /></div>
+            <div class="field"><label>Last Name <span class="req">*</span></label><input type="text" id="lastName" placeholder="e.g. Johnson" /></div>
+          </div>
+          <div class="row row-2" style="margin-top:1rem">
+            <div class="field"><label>Email <span class="req">*</span></label><input type="email" id="email" placeholder="you@example.com" /></div>
+            <div class="field"><label>Phone <span class="req">*</span></label><input type="tel" id="phone" placeholder="(416) 555-0123" /></div>
+          </div>
+          <div class="row row-2" style="margin-top:1rem">
+            <div class="field">
+              <label>Date of Birth <span class="req">*</span></label>
+              <input type="date" id="dob" />
+              <span class="hint">Must be 18+ (Ontario requirement)</span>
+            </div>
+            <div class="field"><label>City / Town <span class="req">*</span></label><input type="text" id="city" placeholder="e.g. Toronto" /></div>
+          </div>
+
+          <div class="section-label">Employment & Income</div>
+          <div class="row row-2">
+            <div class="field">
+              <label>Employment Type <span class="req">*</span></label>
+              <select id="empType">
+                <option value="">— Select —</option>
+                <option value="fulltime">Full-Time Employed</option>
+                <option value="parttime">Part-Time Employed</option>
+                <option value="selfemployed">Self-Employed</option>
+                <option value="retired">Retired / Pension</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="field"><label>Employer / Business Name</label><input type="text" id="employer" placeholder="e.g. ABC Corp" /></div>
+          </div>
+          <div class="row row-2" style="margin-top:1rem">
+            <div class="field">
+              <label>Monthly Net Income ($) <span class="req">*</span></label>
+              <input type="number" id="monthlyIncome" placeholder="e.g. 3500" min="0" />
+              <span class="hint">Take-home pay after taxes</span>
+            </div>
+            <div class="field">
+              <label>Years at Current Job</label>
+              <select id="jobYears">
+                <option value="">— Select —</option>
+                <option value="0">Less than 6 months</option>
+                <option value="1">6 months – 1 year</option>
+                <option value="2">1 – 3 years</option>
+                <option value="5">3 – 5 years</option>
+                <option value="10">5+ years</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-label">Credit Information</div>
+          <div class="row row-2">
+            <div class="field">
+              <label>Credit Score Range <span class="req">*</span></label>
+              <select id="creditRange">
+                <option value="">— Select —</option>
+                <option value="excellent">Excellent (760+)</option>
+                <option value="verygood">Very Good (725–759)</option>
+                <option value="good">Good (660–724)</option>
+                <option value="fair">Fair (560–659)</option>
+                <option value="poor">Poor (Below 560)</option>
+                <option value="unknown">I don't know</option>
+              </select>
+              <span class="hint">Check free at Borrowell or Credit Karma</span>
+            </div>
+            <div class="field">
+              <label>Active Debts / Loans ($)</label>
+              <input type="number" id="existingDebt" placeholder="e.g. 5000" min="0" />
+              <span class="hint">Total outstanding debt</span>
+            </div>
+          </div>
+
+          <div class="section-label">Loan Request</div>
+          <div class="row row-2">
+            <div class="field">
+              <label>Loan Amount ($) <span class="req">*</span></label>
+              <input type="number" id="loanAmount" placeholder="e.g. 5000" min="500" max="15000" />
+              <span class="hint">Maximum $15,000</span>
+            </div>
+            <div class="field">
+              <label>Loan Purpose <span class="req">*</span></label>
+              <select id="loanPurpose">
+                <option value="">— Select —</option>
+                <option value="emergency">Emergency Expense</option>
+                <option value="bills">Bills / Utilities</option>
+                <option value="car">Vehicle / Transportation</option>
+                <option value="medical">Medical / Dental</option>
+                <option value="home">Home Repair</option>
+                <option value="education">Education</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-label">Document Upload</div>
+          <div class="field">
+            <label>Proof of Income <span class="req">*</span></label>
+            <div class="upload-zone" id="incomeZone">
+              <input type="file" id="incomeFiles" multiple accept=".pdf,.jpg,.jpeg,.png" onchange="handleFiles('income',this)" />
+              <div class="icon">📄</div>
+              <p><strong>Click or drag</strong> to upload</p>
+              <p>Pay stub, T4, bank statement, or NOA &nbsp;·&nbsp; PDF, JPG, PNG</p>
+            </div>
+            <div class="file-list" id="incomeList"></div>
+          </div>
+          <div class="field" style="margin-top:1rem">
+            <label>Credit Report <span style="color:var(--muted);font-weight:400">(optional but recommended)</span></label>
+            <div class="upload-zone" id="creditZone">
+              <input type="file" id="creditFiles" multiple accept=".pdf,.jpg,.jpeg,.png" onchange="handleFiles('credit',this)" />
+              <div class="icon">📊</div>
+              <p><strong>Click or drag</strong> to upload</p>
+              <p>Equifax or TransUnion report &nbsp;·&nbsp; PDF, JPG, PNG</p>
+            </div>
+            <div class="file-list" id="creditList"></div>
+          </div>
+
+          <div class="field" style="margin-top:1rem">
+            <label>Government-Issued ID <span class="req">*</span></label>
+            <div class="upload-zone" id="idZone">
+              <input type="file" id="idFiles" multiple accept=".pdf,.jpg,.jpeg,.png" onchange="handleFiles('id',this)" />
+              <div class="icon">🪪</div>
+              <p><strong>Click or drag</strong> to upload</p>
+              <p>Driver's licence, passport, or Ontario photo card &nbsp;·&nbsp; PDF, JPG, PNG</p>
+            </div>
+            <div class="file-list" id="idList"></div>
+          </div>
+
+          <div class="upload-progress" id="uploadProgress">
+            <div class="progress-label" id="progressLabel">Uploading…</div>
+            <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
+          </div>
+
+          <div class="disclaimer">
+            <strong>⚖️ Ontario Lending Notice:</strong> By submitting this application you consent to the lender reviewing your documents to assess loan eligibility. Your information is kept confidential and used only for this application.
+          </div>
+          <button type="submit" class="submit-btn" id="submitBtn">Submit My Application →</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PAGE: SUCCESS ══ -->
+<div id="page-success" class="page">
+  <div class="success-wrap">
+    <div class="card" style="padding:2.5rem 2rem;text-align:center">
+      <div style="font-size:3.5rem;margin-bottom:1rem">✅</div>
+      <h2 style="font-size:1.5rem;font-weight:800;margin-bottom:.5rem">Application Submitted!</h2>
+      <p style="color:var(--muted);line-height:1.6">Thank you! We've received your application and will review it shortly. You'll hear back within 1–2 business days.</p>
+      <div class="ref-box">Reference Number<br><strong id="refNum">QL-000000</strong></div>
+      <p style="font-size:.8rem;color:var(--muted)">Save this number for your records.</p>
+      <button onclick="showPage('page-apply')" class="submit-btn" style="margin-top:1.5rem;max-width:220px;display:inline-block">New Application</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PAGE: OWNER LOGIN ══ -->
+<div id="page-login" class="page">
+  <div class="login-wrap">
+    <div class="card">
+      <div class="card-body">
+        <h2>🔐 Owner Dashboard</h2>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="ownerPass" placeholder="Enter owner password" onkeydown="if(event.key==='Enter')ownerLogin()" />
+        </div>
+        <button class="submit-btn" onclick="ownerLogin()" style="margin-top:1rem">Log In</button>
+        <p style="font-size:.75rem;color:var(--muted);margin-top:.75rem;text-align:center">Default: <strong>ql2025</strong></p>
+        <button onclick="showPage('page-apply')" class="btn-neutral" style="width:100%;margin-top:.5rem;padding:.5rem">← Back</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PAGE: DASHBOARD ══ -->
+<div id="page-dashboard" class="page">
+  <div class="dash-wrap">
+    <div class="dash-header">
+      <div>
+        <h2>Applications Dashboard</h2>
+        <p style="font-size:.85rem;color:var(--muted);margin-top:.15rem">QuickLend Ontario — Confidence Review</p>
+      </div>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+        <button class="btn-neutral" onclick="loadDashboard()">↺ Refresh</button>
+        <button class="btn-neutral" onclick="showPage('page-apply')">← Back</button>
+      </div>
+    </div>
+    <div class="stats" id="dashStats"></div>
+    <div class="app-grid" id="appGrid"></div>
+  </div>
+</div>
+
+<script>
+/* ─── CONFIGURATION ─────────────────────────────────
+   Supabase project credentials
+──────────────────────────────────────────────────── */
+const SUPABASE_URL = 'https://kngngdqcrqurmcmssjmv.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_KlfDOcndtEmcRlBBv7HwDA_i_kUX-Zp';
+const OWNER_PASS   = 'ql2025'; // ← change this before going live
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ─── State ─── */
+let uploadedFiles = { income: [], credit: [], id: [] };
+
+/* ─── Page nav ─── */
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+function showOwnerLogin() { showPage('page-login'); }
+
+/* ─── Toast ─── */
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+/* ─── File handling ─── */
+function handleFiles(type, input) {
+  uploadedFiles[type] = [...uploadedFiles[type], ...Array.from(input.files)];
+  renderFileList(type);
+}
+function removeFile(type, idx) {
+  uploadedFiles[type].splice(idx, 1);
+  renderFileList(type);
+}
+function renderFileList(type) {
+  document.getElementById(type + 'List').innerHTML = uploadedFiles[type].map((f, i) => `
+    <div class="file-item">
+      <span>📎 ${f.name} <span style="color:var(--muted)">(${(f.size/1024).toFixed(0)} KB)</span></span>
+      <button onclick="removeFile('${type}',${i})">×</button>
+    </div>`).join('');
+}
+['incomeZone','creditZone','idZone'].forEach(id => {
+  const z = document.getElementById(id);
+  z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('drag'); });
+  z.addEventListener('dragleave', () => z.classList.remove('drag'));
+  z.addEventListener('drop', e => {
+    e.preventDefault(); z.classList.remove('drag');
+    const type = id === 'incomeZone' ? 'income' : id === 'creditZone' ? 'credit' : 'id';
+    uploadedFiles[type] = [...uploadedFiles[type], ...Array.from(e.dataTransfer.files)];
+    renderFileList(type);
+  });
+});
+
+/* ─── Upload file to Supabase Storage ─── */
+async function uploadFile(file, appId, type) {
+  const path = `${appId}/${type}/${Date.now()}_${file.name}`;
+  const { error } = await sb.storage.from('loan-documents').upload(path, file, { upsert: true });
+  if (error) throw error;
+  const { data } = sb.storage.from('loan-documents').getPublicUrl(path);
+  return { name: file.name, url: data.publicUrl };
+}
+
+/* ─── Confidence Score Engine (0–100) ───────────────
+   Employment   : 0–30 pts
+   Income Ratio : 0–30 pts
+   Credit Range : 0–25 pts
+   Job Stability: 0–10 pts
+   Age Factor   : 0–5  pts
+──────────────────────────────────────────────────── */
+function calcScore(data) {
+  let s = { employment: 0, incomeRatio: 0, credit: 0, jobStability: 0, age: 0 };
+
+  s.employment = { fulltime:30, parttime:18, selfemployed:15, retired:20, other:8 }[data.emp_type] || 0;
+
+  const ratio = (parseFloat(data.monthly_income) * 3) / (parseFloat(data.loan_amount) || 1);
+  s.incomeRatio = ratio >= 2 ? 30 : ratio >= 1.5 ? 24 : ratio >= 1 ? 16 : ratio >= 0.5 ? 8 : 0;
+
+  s.credit = { excellent:25, verygood:20, good:14, fair:7, poor:0, unknown:5 }[data.credit_range] || 0;
+
+  s.jobStability = { '0':0, '1':4, '2':7, '5':9, '10':10 }[data.job_years] ?? 5;
+
+  s.age = data.age >= 25 && data.age <= 60 ? 5 : data.age > 60 ? 4 : 2;
+
+  return { total: Math.min(Object.values(s).reduce((a,b)=>a+b,0), 100), breakdown: s };
+}
+const scoreClass = n => n>=70?'high':n>=50?'medium':n>=30?'low':'poor';
+const scoreLabel = n => n>=70?'High Confidence':n>=50?'Moderate':n>=30?'Review Carefully':'High Risk';
+
+/* ─── Form submit ─── */
+document.getElementById('appForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+
+  const req = ['firstName','lastName','email','phone','dob','city','empType','monthlyIncome','creditRange','loanAmount','loanPurpose'];
+  let valid = true;
+  req.forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.remove('error');
+    if (!el.value.trim()) { el.classList.add('error'); valid = false; }
+  });
+  if (!valid) { toast('⚠️ Please fill in all required fields.'); return; }
+
+  const dob = new Date(document.getElementById('dob').value);
+  const today = new Date();
+  const age = today.getFullYear() - dob.getFullYear() -
+    (today < new Date(today.getFullYear(), dob.getMonth(), dob.getDate()) ? 1 : 0);
+  if (age < 18) { document.getElementById('dob').classList.add('error'); toast('⚠️ Applicant must be 18 or older.'); return; }
+  if (uploadedFiles.income.length === 0) { toast('⚠️ Please upload at least one proof of income.'); return; }
+  if (uploadedFiles.id.length === 0) { toast('⚠️ Please upload a government-issued ID.'); return; }
+  const loanAmt = parseFloat(document.getElementById('loanAmount').value);
+  if (loanAmt < 500 || loanAmt > 15000) { document.getElementById('loanAmount').classList.add('error'); toast('⚠️ Loan must be $500–$15,000.'); return; }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  const progress = document.getElementById('uploadProgress');
+  const fill = document.getElementById('progressFill');
+  const label = document.getElementById('progressLabel');
+  progress.classList.add('show');
+
+  const appId = 'QL-' + Date.now();
+  const allFiles = [
+    ...uploadedFiles.income.map(f => ({ file: f, type: 'income' })),
+    ...uploadedFiles.credit.map(f => ({ file: f, type: 'credit' })),
+    ...uploadedFiles.id.map(f => ({ file: f, type: 'id' }))
+  ];
+
+  const urls = { income: [], credit: [], id: [] };
+  for (let i = 0; i < allFiles.length; i++) {
+    const { file, type } = allFiles[i];
+    label.textContent = `Uploading ${i+1} of ${allFiles.length}: ${file.name}`;
+    fill.style.width = ((i / allFiles.length) * 80) + '%';
+    const result = await uploadFile(file, appId, type);
+    urls[type].push(result);
+  }
+
+  fill.style.width = '90%';
+  label.textContent = 'Saving application…';
+
+  const appData = {
+    id: appId,
+    submitted_at: new Date().toISOString(),
+    status: 'pending',
+    first_name:     document.getElementById('firstName').value.trim(),
+    last_name:      document.getElementById('lastName').value.trim(),
+    email:          document.getElementById('email').value.trim(),
+    phone:          document.getElementById('phone').value.trim(),
+    dob:            document.getElementById('dob').value,
+    age,
+    city:           document.getElementById('city').value.trim(),
+    emp_type:       document.getElementById('empType').value,
+    employer:       document.getElementById('employer').value.trim(),
+    monthly_income: parseFloat(document.getElementById('monthlyIncome').value),
+    job_years:      document.getElementById('jobYears').value,
+    credit_range:   document.getElementById('creditRange').value,
+    existing_debt:  parseFloat(document.getElementById('existingDebt').value || 0),
+    loan_amount:    loanAmt,
+    loan_purpose:   document.getElementById('loanPurpose').value,
+    income_files:   urls.income,
+    credit_files:   urls.credit,
+    id_files:       urls.id,
+  };
+
+  const { total, breakdown } = calcScore(appData);
+  appData.score = total;
+  appData.score_breakdown = breakdown;
+
+  const { error } = await sb.from('applications').insert([appData]);
+  if (error) { toast('❌ Error saving application. Please try again.'); console.error(error); btn.disabled = false; btn.textContent = 'Submit My Application →'; progress.classList.remove('show'); return; }
+
+  fill.style.width = '100%';
+  setTimeout(() => {
+    document.getElementById('refNum').textContent = appId;
+    showPage('page-success');
+    document.getElementById('appForm').reset();
+    uploadedFiles = { income: [], credit: [], id: [] };
+    renderFileList('income'); renderFileList('credit'); renderFileList('id');
+    btn.disabled = false; btn.textContent = 'Submit My Application →';
+    progress.classList.remove('show'); fill.style.width = '0%';
+  }, 400);
+});
+
+/* ─── Owner login ─── */
+function ownerLogin() {
+  if (document.getElementById('ownerPass').value === OWNER_PASS) {
+    document.getElementById('ownerPass').value = '';
+    loadDashboard();
+    showPage('page-dashboard');
+  } else {
+    toast('❌ Incorrect password.');
+  }
+}
+
+/* ─── Dashboard ─── */
+async function loadDashboard() {
+  document.getElementById('appGrid').innerHTML = '<div class="loading-spinner">Loading applications…</div>';
+  document.getElementById('dashStats').innerHTML = '';
+
+  const { data: apps, error } = await sb.from('applications').select('*').order('submitted_at', { ascending: false });
+  if (error) { document.getElementById('appGrid').innerHTML = '<div class="empty-state"><div class="icon">❌</div><p>Error loading applications.</p></div>'; return; }
+
+  const total     = apps.length;
+  const highConf  = apps.filter(a => a.score >= 70).length;
+  const avgScore  = total ? Math.round(apps.reduce((s,a) => s + a.score, 0) / total) : 0;
+  const totalLoan = apps.reduce((s,a) => s + parseFloat(a.loan_amount||0), 0);
+
+  document.getElementById('dashStats').innerHTML = `
+    <div class="stat-card"><div class="label">Total Applications</div><div class="value">${total}</div></div>
+    <div class="stat-card"><div class="label">High Confidence</div><div class="value" style="color:var(--success)">${highConf}</div></div>
+    <div class="stat-card"><div class="label">Avg. Score</div><div class="value" style="color:var(--primary)">${avgScore}</div></div>
+    <div class="stat-card"><div class="label">Total $ Requested</div><div class="value">$${totalLoan.toLocaleString()}</div></div>
+  `;
+
+  if (total === 0) {
+    document.getElementById('appGrid').innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No applications yet. Share the site link to get started.</p></div>';
+    return;
+  }
+
+  const empLabels     = { fulltime:'Full-Time', parttime:'Part-Time', selfemployed:'Self-Employed', retired:'Retired', other:'Other' };
+  const creditLabels  = { excellent:'760+', verygood:'725–759', good:'660–724', fair:'560–659', poor:'<560', unknown:'Unknown' };
+  const purposeLabels = { emergency:'Emergency', bills:'Bills', car:'Vehicle', medical:'Medical', home:'Home Repair', education:'Education', other:'Other' };
+
+  document.getElementById('appGrid').innerHTML = apps.map((app, idx) => {
+    const sc  = app.score;
+    const cls = scoreClass(sc);
+    const lbl = scoreLabel(sc);
+    const bd  = app.score_breakdown || {};
+    const statusBadge = app.status !== 'pending'
+      ? `<span class="status-badge ${app.status}">${app.status.charAt(0).toUpperCase()+app.status.slice(1)}</span>` : '';
+
+    const breakdownRows = [
+      { label:'Employment Type',    pts: bd.employment   ||0, max:30 },
+      { label:'Income / Loan Ratio',pts: bd.incomeRatio  ||0, max:30 },
+      { label:'Credit Score Range', pts: bd.credit       ||0, max:25 },
+      { label:'Job Stability',      pts: bd.jobStability ||0, max:10 },
+      { label:'Age Factor',         pts: bd.age          ||0, max:5  },
+    ];
+
+    const incomeLinks = (app.income_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">📄 ${f.name}</a>`).join('');
+    const creditLinks = (app.credit_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">📊 ${f.name}</a>`).join('');
+    const idLinks = (app.id_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">🪪 ${f.name}</a>`).join('');
+
+    return `
+    <div class="app-card score-${cls}">
+      <div class="app-card-top" onclick="toggleDetail('det-${idx}')">
+        <div class="score-circle ${cls}">${sc}</div>
+        <div class="app-info">
+          <div class="name">${app.first_name} ${app.last_name} ${statusBadge}</div>
+          <div class="meta">$${parseFloat(app.loan_amount).toLocaleString()} · ${empLabels[app.emp_type]||app.emp_type} · ${app.city} · ${new Date(app.submitted_at).toLocaleDateString('en-CA')}</div>
+        </div>
+        <span class="pill ${cls}">${lbl}</span>
+        <span style="color:var(--muted);margin-left:.5rem">▾</span>
+      </div>
+      <div class="app-card-details" id="det-${idx}">
+        <div class="detail-grid">
+          <div class="detail-item"><div class="d-label">Email</div><div class="d-val">${app.email}</div></div>
+          <div class="detail-item"><div class="d-label">Phone</div><div class="d-val">${app.phone}</div></div>
+          <div class="detail-item"><div class="d-label">Age</div><div class="d-val">${app.age} yrs</div></div>
+          <div class="detail-item"><div class="d-label">Monthly Income</div><div class="d-val">$${parseFloat(app.monthly_income).toLocaleString()}</div></div>
+          <div class="detail-item"><div class="d-label">Credit Range</div><div class="d-val">${creditLabels[app.credit_range]||app.credit_range}</div></div>
+          <div class="detail-item"><div class="d-label">Existing Debt</div><div class="d-val">$${parseFloat(app.existing_debt||0).toLocaleString()}</div></div>
+          <div class="detail-item"><div class="d-label">Loan Purpose</div><div class="d-val">${purposeLabels[app.loan_purpose]||app.loan_purpose}</div></div>
+          <div class="detail-item"><div class="d-label">Employer</div><div class="d-val">${app.employer||'—'}</div></div>
+          <div class="detail-item"><div class="d-label">Reference #</div><div class="d-val" style="font-size:.78rem">${app.id}</div></div>
+        </div>
+        ${incomeLinks||creditLinks||idLinks ? `<div class="file-links"><h4>Uploaded Documents</h4>${idLinks}${incomeLinks}${creditLinks||'<span style="font-size:.78rem;color:var(--muted)">No credit report</span>'}</div>` : ''}
+        <div class="score-breakdown" style="margin-top:1rem">
+          <h4>Confidence Score Breakdown (out of 100)</h4>
+          ${breakdownRows.map(r=>`
+            <div class="breakdown-row">
+              <span class="b-label">${r.label}</span>
+              <div class="b-bar"><div class="b-fill" style="width:${(r.pts/r.max)*100}%"></div></div>
+              <span class="b-pts">${r.pts}/${r.max}</span>
+            </div>`).join('')}
+        </div>
+        <div class="action-row">
+          <button class="btn-approve" onclick="setStatus('${app.id}','approved')">✓ Approve</button>
+          <button class="btn-decline" onclick="setStatus('${app.id}','declined')">✗ Decline</button>
+          <button class="btn-neutral" onclick="setStatus('${app.id}','pending')">Reset</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleDetail(id) { document.getElementById(id).classList.toggle('open'); }
+
+async function setStatus(appId, status) {
+  await sb.from('applications').update({ status }).eq('id', appId);
+  toast(status==='approved'?'✅ Approved.':`status==='declined'?'❌ Declined.':'Reset to pending.'`);
+  loadDashboard();
+}
+</script>
+</body>
+</html>
