@@ -6,7 +6,7 @@
   <title>QuickLend Ontario — Loan Application</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- ★ Replace YOUR_GOOGLE_MAPS_API_KEY below with your key from console.cloud.google.com -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=places&callback=initAutocomplete" async defer></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCs5jYM7KgyXuUVGgXRgKnp3e3wqn58Shg&libraries=places&callback=initAutocomplete" async defer></script>
   <style>
     /* Google autocomplete dropdown */
     .pac-container { border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.15); border: 1px solid #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; z-index: 9999; }
@@ -687,4 +687,4 @@ async function loadDashboard() {
     ];
 
     const incomeLinks = (app.income_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">📄 ${f.name}</a>`).join('');
-    const creditLinks = (app.credit_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">📊 
+    const creditLinks = (app.credit_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target
