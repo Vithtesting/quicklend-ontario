@@ -793,25 +793,8 @@ async function updateStatus(id, status) {
   }
   toast(status === 'approved' ? '✅ Approved.' : status === 'declined' ? '❌ Declined.' : '↩ Reset to pending.');
 }
-</script>
-</body>
-</html>
-proved')">✓ Approve</button>
-          <button class="btn-decline" onclick="setStatus('${app.id}','declined')">✗ Decline</button>
-          <button class="btn-neutral" onclick="setStatus('${app.id}','pending')">Reset</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-}
 
 function toggleDetail(id) { document.getElementById(id).classList.toggle('open'); }
-
-async function setStatus(appId, status) {
-  await sb.from('applications').update({ status }).eq('id', appId);
-  toast(status==='approved'?'✅ Approved.':`status==='declined'?'❌ Declined.':'Reset to pending.'`);
-  loadDashboard();
-}
 
 /* ─── Boot autocomplete once Maps API is ready ──
    Uses the official loading=async + callback pattern (see <head>) so
