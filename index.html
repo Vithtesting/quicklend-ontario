@@ -5,7 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>QuickLend Ontario — Loan Application</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- ★ Replace YOUR_GOOGLE_MAPS_API_KEY below with your key from console.cloud.google.com -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=places&callback=initAutocomplete" async defer></script>
   <style>
+    /* Google autocomplete dropdown */
+    .pac-container { border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.15); border: 1px solid #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; z-index: 9999; }
+    .pac-item { padding: .5rem .85rem; font-size: .88rem; cursor: pointer; }
+    .pac-item:hover { background: #eff6ff; }
+    .pac-item-query { font-weight: 600; color: #1a56db; }
+    .pac-matched { font-weight: 700; }
     :root {
       --primary: #1a56db; --primary-dark: #1e429f;
       --success: #057a55; --warning: #c27803;
@@ -191,13 +199,31 @@
             <div class="field"><label>Email <span class="req">*</span></label><input type="email" id="email" placeholder="you@example.com" /></div>
             <div class="field"><label>Phone <span class="req">*</span></label><input type="tel" id="phone" placeholder="(416) 555-0123" /></div>
           </div>
+          <div class="field" style="margin-top:1rem">
+            <label>Home Address <span class="req">*</span></label>
+            <input type="text" id="addressInput" placeholder="Start typing your Ontario address…" autocomplete="off" />
+            <span class="hint">🗺️ Suggestions appear as you type</span>
+          </div>
+          <div class="row row-2" style="margin-top:.75rem">
+            <div class="field">
+              <label>City / Town <span class="req">*</span></label>
+              <input type="text" id="city" placeholder="Auto-filled from address" />
+            </div>
+            <div class="field">
+              <label>Postal Code</label>
+              <input type="text" id="postalCode" placeholder="Auto-filled from address" />
+            </div>
+          </div>
           <div class="row row-2" style="margin-top:1rem">
             <div class="field">
               <label>Date of Birth <span class="req">*</span></label>
               <input type="date" id="dob" />
               <span class="hint">Must be 18+ (Ontario requirement)</span>
             </div>
-            <div class="field"><label>City / Town <span class="req">*</span></label><input type="text" id="city" placeholder="e.g. Toronto" /></div>
+            <div class="field">
+              <label>Province</label>
+              <input type="text" id="province" value="Ontario" readonly style="background:#f3f4f6;color:var(--muted)" />
+            </div>
           </div>
 
           <div class="section-label">Employment & Income</div>
@@ -377,6 +403,50 @@
 </div>
 
 <script>
+/* ─── Google Places Address Autocomplete ────────────
+   Called automatically when the Maps API loads.
+   Restricts to Canadian addresses, auto-fills city
+   and postal code when the user picks a suggestion.
+──────────────────────────────────────────────────── */
+function initAutocomplete() {
+  const input = document.getElementById('addressInput');
+  if (!input || !window.google) return;
+
+  const autocomplete = new google.maps.places.Autocomplete(input, {
+    componentRestrictions: { country: 'ca' },
+    fields: ['address_components', 'formatted_address'],
+    types: ['address']
+  });
+
+  // Prevent form submit when user presses Enter in the address field
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+
+  autocomplete.addListener('place_changed', () => {
+    const place = autocomplete.getPlace();
+    if (!place.address_components) return;
+
+    let streetNumber = '', streetName = '', city = '', postalCode = '';
+
+    for (const c of place.address_components) {
+      if (c.types.includes('street_number'))              streetNumber = c.long_name;
+      if (c.types.includes('route'))                      streetName   = c.long_name;
+      if (c.types.includes('locality'))                   city         = c.long_name;
+      if (c.types.includes('postal_code'))                postalCode   = c.long_name;
+    }
+
+    // Fill address field with clean street address
+    input.value = [streetNumber, streetName].filter(Boolean).join(' ') || place.formatted_address;
+
+    // Auto-fill city and postal code
+    if (city)       document.getElementById('city').value       = city;
+    if (postalCode) document.getElementById('postalCode').value = postalCode;
+
+    // Clear any error state
+    input.classList.remove('error');
+    document.getElementById('city').classList.remove('error');
+  });
+}
+
 /* ─── CONFIGURATION ─────────────────────────────────
    Supabase project credentials
 ──────────────────────────────────────────────────── */
@@ -472,7 +542,7 @@ const scoreLabel = n => n>=70?'High Confidence':n>=50?'Moderate':n>=30?'Review C
 document.getElementById('appForm').addEventListener('submit', async function(e) {
   e.preventDefault();
 
-  const req = ['firstName','lastName','email','phone','dob','city','empType','monthlyIncome','creditRange','loanAmount','loanPurpose'];
+  const req = ['firstName','lastName','email','phone','addressInput','city','dob','empType','monthlyIncome','creditRange','loanAmount','loanPurpose'];
   let valid = true;
   req.forEach(id => {
     const el = document.getElementById(id);
@@ -617,59 +687,4 @@ async function loadDashboard() {
     ];
 
     const incomeLinks = (app.income_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">📄 ${f.name}</a>`).join('');
-    const creditLinks = (app.credit_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">📊 ${f.name}</a>`).join('');
-    const idLinks = (app.id_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">🪪 ${f.name}</a>`).join('');
-
-    return `
-    <div class="app-card score-${cls}">
-      <div class="app-card-top" onclick="toggleDetail('det-${idx}')">
-        <div class="score-circle ${cls}">${sc}</div>
-        <div class="app-info">
-          <div class="name">${app.first_name} ${app.last_name} ${statusBadge}</div>
-          <div class="meta">$${parseFloat(app.loan_amount).toLocaleString()} · ${empLabels[app.emp_type]||app.emp_type} · ${app.city} · ${new Date(app.submitted_at).toLocaleDateString('en-CA')}</div>
-        </div>
-        <span class="pill ${cls}">${lbl}</span>
-        <span style="color:var(--muted);margin-left:.5rem">▾</span>
-      </div>
-      <div class="app-card-details" id="det-${idx}">
-        <div class="detail-grid">
-          <div class="detail-item"><div class="d-label">Email</div><div class="d-val">${app.email}</div></div>
-          <div class="detail-item"><div class="d-label">Phone</div><div class="d-val">${app.phone}</div></div>
-          <div class="detail-item"><div class="d-label">Age</div><div class="d-val">${app.age} yrs</div></div>
-          <div class="detail-item"><div class="d-label">Monthly Income</div><div class="d-val">$${parseFloat(app.monthly_income).toLocaleString()}</div></div>
-          <div class="detail-item"><div class="d-label">Credit Range</div><div class="d-val">${creditLabels[app.credit_range]||app.credit_range}</div></div>
-          <div class="detail-item"><div class="d-label">Existing Debt</div><div class="d-val">$${parseFloat(app.existing_debt||0).toLocaleString()}</div></div>
-          <div class="detail-item"><div class="d-label">Loan Purpose</div><div class="d-val">${purposeLabels[app.loan_purpose]||app.loan_purpose}</div></div>
-          <div class="detail-item"><div class="d-label">Employer</div><div class="d-val">${app.employer||'—'}</div></div>
-          <div class="detail-item"><div class="d-label">Reference #</div><div class="d-val" style="font-size:.78rem">${app.id}</div></div>
-        </div>
-        ${incomeLinks||creditLinks||idLinks ? `<div class="file-links"><h4>Uploaded Documents</h4>${idLinks}${incomeLinks}${creditLinks||'<span style="font-size:.78rem;color:var(--muted)">No credit report</span>'}</div>` : ''}
-        <div class="score-breakdown" style="margin-top:1rem">
-          <h4>Confidence Score Breakdown (out of 100)</h4>
-          ${breakdownRows.map(r=>`
-            <div class="breakdown-row">
-              <span class="b-label">${r.label}</span>
-              <div class="b-bar"><div class="b-fill" style="width:${(r.pts/r.max)*100}%"></div></div>
-              <span class="b-pts">${r.pts}/${r.max}</span>
-            </div>`).join('')}
-        </div>
-        <div class="action-row">
-          <button class="btn-approve" onclick="setStatus('${app.id}','approved')">✓ Approve</button>
-          <button class="btn-decline" onclick="setStatus('${app.id}','declined')">✗ Decline</button>
-          <button class="btn-neutral" onclick="setStatus('${app.id}','pending')">Reset</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function toggleDetail(id) { document.getElementById(id).classList.toggle('open'); }
-
-async function setStatus(appId, status) {
-  await sb.from('applications').update({ status }).eq('id', appId);
-  toast(status==='approved'?'✅ Approved.':`status==='declined'?'❌ Declined.':'Reset to pending.'`);
-  loadDashboard();
-}
-</script>
-</body>
-</html>
+    const creditLinks = (app.credit_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">📊 
