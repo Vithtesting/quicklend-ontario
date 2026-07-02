@@ -6,7 +6,16 @@
   <title>QuickLend Ontario — Loan Application</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- ★ Replace YOUR_GOOGLE_MAPS_API_KEY below with your key from console.cloud.google.com -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCs5jYM7KgyXuUVGgXRgKnp3e3wqn58Shg&libraries=places" async defer></script>
+  <script>
+    // Bootstrap flag/callback defined BEFORE the Maps script tag so there is
+    // no race between the async Maps script finishing and this existing.
+    window.__mapsReady = false;
+    window.onGoogleMapsReady = function () {
+      window.__mapsReady = true;
+      if (window.__tryInitAutocomplete) window.__tryInitAutocomplete();
+    };
+  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCs5jYM7KgyXuUVGgXRgKnp3e3wqn58Shg&libraries=places&loading=async&callback=onGoogleMapsReady" async defer></script>
   <style>
     /* Google autocomplete dropdown */
     .pac-container { border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.15); border: 1px solid #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; z-index: 9999; }
@@ -62,15 +71,26 @@
     input.error, select.error { border-color: var(--danger); }
     .hint { font-size: .76rem; color: var(--muted); }
 
-    .upload-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all .15s; position: relative; background: #f9fafb; }
+    .upload-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all .2s; position: relative; background: #f9fafb; }
     .upload-zone:hover, .upload-zone.drag { border-color: var(--primary); background: #eff6ff; }
+    .upload-zone.has-files { border-color: var(--success); border-style: solid; background: #f0fdf4; }
     .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; border: none; }
     .upload-zone .icon { font-size: 1.8rem; margin-bottom: .4rem; }
     .upload-zone p { font-size: .85rem; color: var(--muted); }
     .upload-zone strong { color: var(--primary); }
-    .file-list { margin-top: .75rem; display: flex; flex-direction: column; gap: .4rem; }
-    .file-item { background: #dbeafe; border-radius: 5px; padding: .35rem .75rem; font-size: .8rem; display: flex; align-items: center; justify-content: space-between; color: var(--primary-dark); }
-    .file-item button { background: none; border: none; cursor: pointer; color: var(--danger); font-size: 1rem; padding: 0; line-height: 1; }
+    .upload-zone.has-files .icon { display: none; }
+    .upload-zone.has-files p { display: none; }
+    .upload-zone.has-files::before { content: '✅ Files ready — click or drop to add more'; font-size: .82rem; color: var(--success); font-weight: 600; }
+
+    .file-list { margin-top: .75rem; display: flex; flex-wrap: wrap; gap: .6rem; }
+    .file-preview-card { position: relative; border-radius: 8px; overflow: hidden; border: 1.5px solid #bfdbfe; background: #fff; width: 110px; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,.07); }
+    .file-preview-card .thumb { width: 110px; height: 80px; object-fit: cover; display: block; }
+    .file-preview-card .pdf-thumb { width: 110px; height: 80px; background: linear-gradient(135deg,#fee2e2,#fca5a5); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 1.6rem; }
+    .file-preview-card .pdf-thumb span { font-size: .65rem; font-weight: 700; color: #b91c1c; margin-top: 2px; text-transform: uppercase; letter-spacing: .04em; }
+    .file-preview-card .card-info { padding: .3rem .4rem; font-size: .68rem; color: #374151; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-top: 1px solid #e5e7eb; }
+    .file-preview-card .card-size { font-size: .62rem; color: var(--muted); font-weight: 400; }
+    .file-preview-card .remove-btn { position: absolute; top: 3px; right: 3px; background: rgba(0,0,0,.55); color: #fff; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: .75rem; line-height: 18px; text-align: center; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+    .file-preview-card .remove-btn:hover { background: var(--danger); }
 
     .upload-progress { margin-top: .75rem; display: none; }
     .upload-progress.show { display: block; }
@@ -484,12 +504,51 @@ function removeFile(type, idx) {
   uploadedFiles[type].splice(idx, 1);
   renderFileList(type);
 }
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 function renderFileList(type) {
-  document.getElementById(type + 'List').innerHTML = uploadedFiles[type].map((f, i) => `
-    <div class="file-item">
-      <span>📎 ${f.name} <span style="color:var(--muted)">(${(f.size/1024).toFixed(0)} KB)</span></span>
-      <button onclick="removeFile('${type}',${i})">×</button>
-    </div>`).join('');
+  const zone = document.getElementById(type + 'Zone');
+  const list = document.getElementById(type + 'List');
+  const files = uploadedFiles[type];
+
+  // Toggle zone style
+  if (files.length > 0) {
+    zone.classList.add('has-files');
+  } else {
+    zone.classList.remove('has-files');
+  }
+
+  list.innerHTML = '';
+
+  files.forEach((f, i) => {
+    const card = document.createElement('div');
+    card.className = 'file-preview-card';
+
+    const isImage = f.type.startsWith('image/');
+    const isPDF   = f.type === 'application/pdf';
+
+    const removeBtn = `<button class="remove-btn" onclick="removeFile('${type}',${i})" title="Remove">✕</button>`;
+    const info = `<div class="card-info" title="${f.name}">${f.name}<br><span class="card-size">${formatSize(f.size)}</span></div>`;
+
+    if (isImage) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        card.querySelector('.thumb').src = e.target.result;
+      };
+      reader.readAsDataURL(f);
+      card.innerHTML = `<img class="thumb" src="" alt="${f.name}" />${removeBtn}${info}`;
+    } else if (isPDF) {
+      card.innerHTML = `<div class="pdf-thumb">📄<span>PDF</span></div>${removeBtn}${info}`;
+    } else {
+      card.innerHTML = `<div class="pdf-thumb" style="background:linear-gradient(135deg,#e0e7ff,#a5b4fc)">📎<span>${f.name.split('.').pop().toUpperCase()}</span></div>${removeBtn}${info}`;
+    }
+
+    list.appendChild(card);
+  });
 }
 ['incomeZone','creditZone','idZone'].forEach(id => {
   const z = document.getElementById(id);
@@ -647,44 +706,135 @@ async function loadDashboard() {
   document.getElementById('dashStats').innerHTML = '';
 
   const { data: apps, error } = await sb.from('applications').select('*').order('submitted_at', { ascending: false });
-  if (error) { document.getElementById('appGrid').innerHTML = '<div class="empty-state"><div class="icon">❌</div><p>Error loading applications.</p></div>'; return; }
+  if (error) { document.getElementById('appGrid').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>Error loading applications.</p></div>'; return; }
 
-  const total     = apps.length;
-  const highConf  = apps.filter(a => a.score >= 70).length;
-  const avgScore  = total ? Math.round(apps.reduce((s,a) => s + a.score, 0) / total) : 0;
-  const totalLoan = apps.reduce((s,a) => s + parseFloat(a.loan_amount||0), 0);
+  const total = apps.length;
+  const pending = apps.filter(a => a.status === 'pending').length;
+  const approved = apps.filter(a => a.status === 'approved').length;
+  const avgScore = apps.length ? Math.round(apps.reduce((s,a) => s + (a.score||0), 0) / apps.length) : 0;
 
   document.getElementById('dashStats').innerHTML = `
-    <div class="stat-card"><div class="label">Total Applications</div><div class="value">${total}</div></div>
-    <div class="stat-card"><div class="label">High Confidence</div><div class="value" style="color:var(--success)">${highConf}</div></div>
-    <div class="stat-card"><div class="label">Avg. Score</div><div class="value" style="color:var(--primary)">${avgScore}</div></div>
-    <div class="stat-card"><div class="label">Total $ Requested</div><div class="value">$${totalLoan.toLocaleString()}</div></div>
+    <div class="stat-card"><div class="label">Total</div><div class="value">${total}</div></div>
+    <div class="stat-card"><div class="label">Pending</div><div class="value">${pending}</div></div>
+    <div class="stat-card"><div class="label">Approved</div><div class="value">${approved}</div></div>
+    <div class="stat-card"><div class="label">Avg Score</div><div class="value">${avgScore}</div></div>
   `;
 
-  if (total === 0) {
-    document.getElementById('appGrid').innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No applications yet. Share the site link to get started.</p></div>';
+  if (!apps.length) {
+    document.getElementById('appGrid').innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>No applications yet.</p></div>';
     return;
   }
 
-  const empLabels     = { fulltime:'Full-Time', parttime:'Part-Time', selfemployed:'Self-Employed', retired:'Retired', other:'Other' };
-  const creditLabels  = { excellent:'760+', verygood:'725–759', good:'660–724', fair:'560–659', poor:'<560', unknown:'Unknown' };
-  const purposeLabels = { emergency:'Emergency', bills:'Bills', car:'Vehicle', medical:'Medical', home:'Home Repair', education:'Education', other:'Other' };
+  document.getElementById('appGrid').innerHTML = apps.map(a => {
+    const sc = scoreClass(a.score || 0);
+    const sl = scoreLabel(a.score || 0);
+    const bd = a.score_breakdown || {};
+    const incomeFiles = (a.income_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
+    const creditFiles = (a.credit_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
+    const idFiles = (a.id_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
+    const badge = a.status !== 'pending' ? `<span class="status-badge ${a.status}">${a.status}</span>` : '';
+    return `
+    <div class="app-card score-${sc}" id="card-${a.id}">
+      <div class="app-card-top" onclick="this.parentElement.querySelector('.app-card-details').classList.toggle('open')">
+        <div class="score-circle ${sc}">${a.score || 0}</div>
+        <div class="app-info">
+          <div class="name">${a.first_name} ${a.last_name}${badge}</div>
+          <div class="meta">${a.city || ''} · $${(a.loan_amount||0).toLocaleString()} · ${new Date(a.submitted_at).toLocaleDateString('en-CA')}</div>
+        </div>
+        <span class="pill ${sc}">${sl}</span>
+      </div>
+      <div class="app-card-details">
+        <div class="detail-grid">
+          <div class="detail-item"><div class="d-label">Email</div><div class="d-val">${a.email}</div></div>
+          <div class="detail-item"><div class="d-label">Phone</div><div class="d-val">${a.phone}</div></div>
+          <div class="detail-item"><div class="d-label">DOB</div><div class="d-val">${a.dob} (age ${a.age})</div></div>
+          <div class="detail-item"><div class="d-label">Employment</div><div class="d-val">${a.emp_type}</div></div>
+          <div class="detail-item"><div class="d-label">Employer</div><div class="d-val">${a.employer || '—'}</div></div>
+          <div class="detail-item"><div class="d-label">Monthly Income</div><div class="d-val">$${(a.monthly_income||0).toLocaleString()}</div></div>
+          <div class="detail-item"><div class="d-label">Existing Debt</div><div class="d-val">$${(a.existing_debt||0).toLocaleString()}</div></div>
+          <div class="detail-item"><div class="d-label">Loan Purpose</div><div class="d-val">${a.loan_purpose || '—'}</div></div>
+          <div class="detail-item"><div class="d-label">Credit Range</div><div class="d-val">${a.credit_range || '—'}</div></div>
+        </div>
+        <div class="score-breakdown">
+          <h4>Score Breakdown</h4>
+          ${Object.entries(bd).map(([k,v]) => `
+            <div class="breakdown-row">
+              <span class="b-label">${k.replace(/([A-Z])/g,' $1').trim()}</span>
+              <div class="b-bar"><div class="b-fill" style="width:${Math.min(v*3,100)}%"></div></div>
+              <span class="b-pts">${v} pts</span>
+            </div>`).join('')}
+        </div>
+        ${incomeFiles||creditFiles||idFiles ? `
+        <div class="file-links">
+          <h4>Documents</h4>
+          ${incomeFiles ? `<div><strong>Income:</strong> ${incomeFiles}</div>` : ''}
+          ${creditFiles ? `<div><strong>Credit:</strong> ${creditFiles}</div>` : ''}
+          ${idFiles ? `<div><strong>ID:</strong> ${idFiles}</div>` : ''}
+        </div>` : ''}
+        <div class="action-row">
+          <button class="btn-approve" onclick="updateStatus('${a.id}','approved')">✓ Approve</button>
+          <button class="btn-decline" onclick="updateStatus('${a.id}','declined')">✗ Decline</button>
+          <button class="btn-neutral" onclick="updateStatus('${a.id}','pending')">Reset</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
 
-  document.getElementById('appGrid').innerHTML = apps.map((app, idx) => {
-    const sc  = app.score;
-    const cls = scoreClass(sc);
-    const lbl = scoreLabel(sc);
-    const bd  = app.score_breakdown || {};
-    const statusBadge = app.status !== 'pending'
-      ? `<span class="status-badge ${app.status}">${app.status.charAt(0).toUpperCase()+app.status.slice(1)}</span>` : '';
+async function updateStatus(id, status) {
+  const { error } = await sb.from('applications').update({ status }).eq('id', id);
+  if (error) { toast('❌ Error updating status.'); return; }
+  const card = document.getElementById('card-' + id);
+  if (card) {
+    const nameEl = card.querySelector('.name');
+    const existingBadge = nameEl ? nameEl.querySelector('.status-badge') : null;
+    if (existingBadge) { existingBadge.className = `status-badge ${status}`; existingBadge.textContent = status; }
+    else if (nameEl && status !== 'pending') nameEl.insertAdjacentHTML('beforeend', `<span class="status-badge ${status}">${status}</span>`);
+  }
+  toast(status === 'approved' ? '✅ Approved.' : status === 'declined' ? '❌ Declined.' : '↩ Reset to pending.');
+}
+</script>
+</body>
+</html>
+proved')">✓ Approve</button>
+          <button class="btn-decline" onclick="setStatus('${app.id}','declined')">✗ Decline</button>
+          <button class="btn-neutral" onclick="setStatus('${app.id}','pending')">Reset</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
 
-    const breakdownRows = [
-      { label:'Employment Type',    pts: bd.employment   ||0, max:30 },
-      { label:'Income / Loan Ratio',pts: bd.incomeRatio  ||0, max:30 },
-      { label:'Credit Score Range', pts: bd.credit       ||0, max:25 },
-      { label:'Job Stability',      pts: bd.jobStability ||0, max:10 },
-      { label:'Age Factor',         pts: bd.age          ||0, max:5  },
-    ];
+function toggleDetail(id) { document.getElementById(id).classList.toggle('open'); }
 
-    const incomeLinks = (app.income_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">📄 ${f.name}</a>`).join('');
-    const creditLinks = (app.credit_files||[]).map(f=>`<a class="file-link-item" href="${f.url}" target="_blank">📊 ${f.name}</
+async function setStatus(appId, status) {
+  await sb.from('applications').update({ status }).eq('id', appId);
+  toast(status==='approved'?'✅ Approved.':`status==='declined'?'❌ Declined.':'Reset to pending.'`);
+  loadDashboard();
+}
+
+/* ─── Boot autocomplete once Maps API is ready ──
+   Uses the official loading=async + callback pattern (see <head>) so
+   initAutocomplete only runs once the Places library is FULLY ready —
+   not just as soon as `google.maps.places` exists, which could be true
+   a moment before the widget's internal listeners are wired up and
+   cause the dropdown to silently never appear. Guarded so it only
+   binds once no matter which order the callback vs. this script runs. */
+window.__tryInitAutocomplete = function () {
+  if (window.__autocompleteBound) return;
+  const input = document.getElementById('addressInput');
+  if (!input || !window.google || !window.google.maps || !window.google.maps.places) return;
+  window.__autocompleteBound = true;
+  initAutocomplete();
+};
+if (window.__mapsReady) window.__tryInitAutocomplete();
+
+// Fallback safety net in case the callback param is ever stripped/blocked
+(function pollFallback() {
+  if (window.__autocompleteBound) return;
+  window.__tryInitAutocomplete();
+  if (!window.__autocompleteBound) setTimeout(pollFallback, 300);
+})();
+</script>
+</body>
+</html>
