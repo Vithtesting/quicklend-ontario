@@ -252,6 +252,36 @@
               <input type="text" id="province" value="Ontario" readonly style="background:#f3f4f6;color:var(--muted)" />
             </div>
           </div>
+          <div class="row row-2" style="margin-top:1rem">
+            <div class="field">
+              <label>Housing Status</label>
+              <select id="housingStatus">
+                <option value="">— Select —</option>
+                <option value="own">Own</option>
+                <option value="rent">Rent</option>
+                <option value="family">Live with Family</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Time at Current Address</label>
+              <select id="timeAtAddress">
+                <option value="">— Select —</option>
+                <option value="0">Less than 6 months</option>
+                <option value="1">6 months – 1 year</option>
+                <option value="2">1 – 3 years</option>
+                <option value="5">3 – 5 years</option>
+                <option value="10">5+ years</option>
+              </select>
+            </div>
+          </div>
+          <div class="row row-2" style="margin-top:1rem">
+            <div class="field">
+              <label>Monthly Housing Payment ($)</label>
+              <input type="number" id="monthlyHousingPayment" placeholder="e.g. 1500" min="0" />
+              <span class="hint">Rent or mortgage payment</span>
+            </div>
+          </div>
 
           <div class="section-label">Employment & Income</div>
           <div class="row row-2">
@@ -292,9 +322,33 @@
                 <option value="10">5+ years</option>
               </select>
             </div>
+            <div class="field">
+              <label>Pay Frequency</label>
+              <select id="payFrequency">
+                <option value="">— Select —</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Biweekly</option>
+                <option value="semimonthly">Semi-Monthly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+          </div>
+          <div class="row" style="margin-top:1rem">
+            <div class="field">
+              <label>Banking Relationship Length</label>
+              <select id="bankingLength">
+                <option value="">— Select —</option>
+                <option value="0">Less than 6 months</option>
+                <option value="1">6 months – 1 year</option>
+                <option value="2">1 – 3 years</option>
+                <option value="5">3 – 5 years</option>
+                <option value="10">5+ years</option>
+              </select>
+              <span class="hint">How long with their current bank</span>
+            </div>
           </div>
 
-          <div class="section-label">Credit Information</div>
+          <div class="section-label">Credit & Debt Information</div>
           <div class="row row-2">
             <div class="field">
               <label>Credit Score Range <span class="req">*</span></label>
@@ -312,7 +366,46 @@
             <div class="field">
               <label>Active Debts / Loans ($)</label>
               <input type="number" id="existingDebt" placeholder="e.g. 5000" min="0" />
-              <span class="hint">Total outstanding debt</span>
+              <span class="hint">Total outstanding balance across all debts</span>
+            </div>
+          </div>
+          <div class="row row-2" style="margin-top:1rem">
+            <div class="field">
+              <label>Existing Monthly Debt Payments ($)</label>
+              <input type="number" id="monthlyDebtPayments" placeholder="e.g. 350" min="0" />
+              <span class="hint">Combined minimum payments: cards, car loan, other loans/LOC</span>
+            </div>
+            <div class="field">
+              <label>Other Payday/Instalment Loans</label>
+              <input type="number" id="otherPaydayLoans" placeholder="0" min="0" />
+              <span class="hint">Number currently outstanding with other lenders</span>
+            </div>
+          </div>
+          <div class="row row-2" style="margin-top:1rem">
+            <div class="field">
+              <label>Bankruptcy / Consumer Proposal</label>
+              <select id="bankruptcyStatus">
+                <option value="">— Select —</option>
+                <option value="no">No</option>
+                <option value="discharged">Yes — Discharged</option>
+                <option value="active">Yes — Active</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Discharge Date (if applicable)</label>
+              <input type="date" id="bankruptcyDate" />
+            </div>
+          </div>
+
+          <div class="section-label">Reference <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+          <div class="row row-2">
+            <div class="field">
+              <label>Reference Name</label>
+              <input type="text" id="referenceName" placeholder="e.g. Jane Smith" />
+            </div>
+            <div class="field">
+              <label>Reference Phone</label>
+              <input type="tel" id="referencePhone" placeholder="(416) 555-0123" />
             </div>
           </div>
 
@@ -358,6 +451,16 @@
               <p>Equifax or TransUnion report &nbsp;·&nbsp; PDF, JPG, PNG</p>
             </div>
             <div class="file-list" id="creditList"></div>
+          </div>
+          <div class="field" style="margin-top:1rem">
+            <label>Bank Statement <span style="color:var(--muted);font-weight:400">(optional, last 30–90 days)</span></label>
+            <div class="upload-zone" id="bankStatementZone">
+              <input type="file" id="bankStatementFiles" multiple accept=".pdf,.jpg,.jpeg,.png" onchange="handleFiles('bankStatement',this)" />
+              <div class="icon">🏦</div>
+              <p><strong>Click or drag</strong> to upload</p>
+              <p>Recent bank statement(s) &nbsp;·&nbsp; PDF, JPG, PNG</p>
+            </div>
+            <div class="file-list" id="bankStatementList"></div>
           </div>
 
           <div class="field" style="margin-top:1rem">
@@ -486,7 +589,7 @@ const OWNER_PASS   = 'ql2025'; // ← change this before going live
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* ─── State ─── */
-let uploadedFiles = { income: [], credit: [], id: [] };
+let uploadedFiles = { income: [], credit: [], id: [], bankStatement: [] };
 
 /* ─── Income helper ───
    The form collects Annual Income – Net (required) and Annual Income –
@@ -573,13 +676,14 @@ function renderFileList(type) {
     list.appendChild(card);
   });
 }
-['incomeZone','creditZone','idZone'].forEach(id => {
+const ZONE_TYPE = { incomeZone: 'income', creditZone: 'credit', idZone: 'id', bankStatementZone: 'bankStatement' };
+Object.keys(ZONE_TYPE).forEach(id => {
   const z = document.getElementById(id);
   z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('drag'); });
   z.addEventListener('dragleave', () => z.classList.remove('drag'));
   z.addEventListener('drop', e => {
     e.preventDefault(); z.classList.remove('drag');
-    const type = id === 'incomeZone' ? 'income' : id === 'creditZone' ? 'credit' : 'id';
+    const type = ZONE_TYPE[id];
     uploadedFiles[type] = [...uploadedFiles[type], ...Array.from(e.dataTransfer.files)];
     renderFileList(type);
   });
@@ -655,10 +759,11 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
   const allFiles = [
     ...uploadedFiles.income.map(f => ({ file: f, type: 'income' })),
     ...uploadedFiles.credit.map(f => ({ file: f, type: 'credit' })),
-    ...uploadedFiles.id.map(f => ({ file: f, type: 'id' }))
+    ...uploadedFiles.id.map(f => ({ file: f, type: 'id' })),
+    ...uploadedFiles.bankStatement.map(f => ({ file: f, type: 'bankStatement' }))
   ];
 
-  const urls = { income: [], credit: [], id: [] };
+  const urls = { income: [], credit: [], id: [], bankStatement: [] };
   for (let i = 0; i < allFiles.length; i++) {
     const { file, type } = allFiles[i];
     label.textContent = `Uploading ${i+1} of ${allFiles.length}: ${file.name}`;
@@ -691,9 +796,21 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
     existing_debt:  parseFloat(document.getElementById('existingDebt').value || 0),
     loan_amount:    loanAmt,
     loan_purpose:   document.getElementById('loanPurpose').value,
+    housing_status:              document.getElementById('housingStatus').value,
+    time_at_address:             document.getElementById('timeAtAddress').value,
+    monthly_housing_payment:     parseFloat(document.getElementById('monthlyHousingPayment').value || 0) || null,
+    pay_frequency:               document.getElementById('payFrequency').value,
+    banking_length:              document.getElementById('bankingLength').value,
+    monthly_debt_payments:       parseFloat(document.getElementById('monthlyDebtPayments').value || 0) || null,
+    other_payday_loans_count:    parseInt(document.getElementById('otherPaydayLoans').value || 0, 10) || 0,
+    bankruptcy_status:           document.getElementById('bankruptcyStatus').value,
+    bankruptcy_discharge_date:   document.getElementById('bankruptcyDate').value || null,
+    reference_name:              document.getElementById('referenceName').value.trim(),
+    reference_phone:             document.getElementById('referencePhone').value.trim(),
     income_files:   urls.income,
     credit_files:   urls.credit,
     id_files:       urls.id,
+    bank_statement_files: urls.bankStatement,
     doc_analysis_status: 'pending',
   };
 
@@ -726,8 +843,8 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
   renderResult(decision, appId);
   showPage('page-result');
   document.getElementById('appForm').reset();
-  uploadedFiles = { income: [], credit: [], id: [] };
-  renderFileList('income'); renderFileList('credit'); renderFileList('id');
+  uploadedFiles = { income: [], credit: [], id: [], bankStatement: [] };
+  renderFileList('income'); renderFileList('credit'); renderFileList('id'); renderFileList('bankStatement');
   btn.disabled = false; btn.textContent = 'Submit My Application →';
   progress.classList.remove('show'); fill.style.width = '0%';
 });
@@ -820,6 +937,11 @@ async function loadDashboard() {
     const incomeFiles = (a.income_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
     const creditFiles = (a.credit_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
     const idFiles = (a.id_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
+    const bankStatementFiles = (a.bank_statement_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
+    const yearsLabel = v => ({'0':'< 6 months','1':'6mo–1yr','2':'1–3 yrs','5':'3–5 yrs','10':'5+ yrs'}[v] || '—');
+    const housingLabel = { own:'Own', rent:'Rent', family:'Live with Family', other:'Other' }[a.housing_status] || '—';
+    const payFreqLabel = { weekly:'Weekly', biweekly:'Biweekly', semimonthly:'Semi-Monthly', monthly:'Monthly' }[a.pay_frequency] || '—';
+    const bankruptcyLabel = { no:'No', discharged:'Yes — Discharged', active:'Yes — Active' }[a.bankruptcy_status] || '—';
     const badge = a.status !== 'pending' ? `<span class="status-badge ${a.status}">${a.status}</span>` : '';
     return `
     <div class="app-card score-${sc}" id="card-${a.id}">
@@ -843,6 +965,15 @@ async function loadDashboard() {
           <div class="detail-item"><div class="d-label">Existing Debt</div><div class="d-val">$${(a.existing_debt||0).toLocaleString()}</div></div>
           <div class="detail-item"><div class="d-label">Loan Purpose</div><div class="d-val">${a.loan_purpose || '—'}</div></div>
           <div class="detail-item"><div class="d-label">Credit Range</div><div class="d-val">${a.credit_range || '—'}</div></div>
+          <div class="detail-item"><div class="d-label">Housing Status</div><div class="d-val">${housingLabel}</div></div>
+          <div class="detail-item"><div class="d-label">Monthly Housing Payment</div><div class="d-val">${a.monthly_housing_payment ? '$' + a.monthly_housing_payment.toLocaleString() : '—'}</div></div>
+          <div class="detail-item"><div class="d-label">Time at Address</div><div class="d-val">${yearsLabel(a.time_at_address)}</div></div>
+          <div class="detail-item"><div class="d-label">Pay Frequency</div><div class="d-val">${payFreqLabel}</div></div>
+          <div class="detail-item"><div class="d-label">Banking Length</div><div class="d-val">${yearsLabel(a.banking_length)}</div></div>
+          <div class="detail-item"><div class="d-label">Monthly Debt Payments</div><div class="d-val">${a.monthly_debt_payments ? '$' + a.monthly_debt_payments.toLocaleString() : '—'}</div></div>
+          <div class="detail-item"><div class="d-label">Other Payday Loans</div><div class="d-val">${a.other_payday_loans_count ?? 0}</div></div>
+          <div class="detail-item"><div class="d-label">Bankruptcy / Proposal</div><div class="d-val">${bankruptcyLabel}${a.bankruptcy_discharge_date ? ' (' + a.bankruptcy_discharge_date + ')' : ''}</div></div>
+          <div class="detail-item"><div class="d-label">Reference</div><div class="d-val">${a.reference_name ? a.reference_name + (a.reference_phone ? ' · ' + a.reference_phone : '') : '—'}</div></div>
         </div>
         <div class="score-breakdown">
           <h4>Score Breakdown</h4>
@@ -860,12 +991,13 @@ async function loadDashboard() {
           ${a.ai_verified_credit_range ? `<div class="detail-item" style="margin-bottom:.5rem"><div class="d-label">AI-Verified Credit Range</div><div class="d-val">${a.ai_verified_credit_range}</div></div>` : ''}
           ${(a.ai_flags && a.ai_flags.length) ? `<div class="detail-item"><div class="d-label">Flags</div><div class="d-val" style="color:var(--danger)">${a.ai_flags.join('; ')}</div></div>` : ''}
         </div>` : ''}
-        ${incomeFiles||creditFiles||idFiles ? `
+        ${incomeFiles||creditFiles||idFiles||bankStatementFiles ? `
         <div class="file-links">
           <h4>Documents</h4>
           ${incomeFiles ? `<div><strong>Income:</strong> ${incomeFiles}</div>` : ''}
           ${creditFiles ? `<div><strong>Credit:</strong> ${creditFiles}</div>` : ''}
           ${idFiles ? `<div><strong>ID:</strong> ${idFiles}</div>` : ''}
+          ${bankStatementFiles ? `<div><strong>Bank Statement:</strong> ${bankStatementFiles}</div>` : ''}
         </div>` : ''}
         <div class="action-row">
           <button class="btn-approve" onclick="updateStatus('${a.id}','approved')">✓ Approve</button>
