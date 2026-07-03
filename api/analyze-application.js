@@ -43,10 +43,14 @@ const LOAN_TIERS = {
 
 function scoreClass(n) { return n >= 70 ? 'high' : n >= 50 ? 'medium' : n >= 30 ? 'low' : 'poor'; }
 
-function estimateMonthlyNet(annualIncome, incomeType) {
-  const annual = parseFloat(annualIncome) || 0;
-  const net = incomeType === 'gross' ? annual * GROSS_TO_NET_FACTOR : annual;
-  return net / 12;
+// Uses the reported Net figure directly when given (matches index.html's
+// two-field Net/Gross inputs). Only estimates from Gross as a fallback if
+// Net was left blank.
+function estimateMonthlyNet(annualNet, annualGross) {
+  const net = parseFloat(annualNet) || 0;
+  if (net > 0) return net / 12;
+  const gross = parseFloat(annualGross) || 0;
+  return (gross * GROSS_TO_NET_FACTOR) / 12;
 }
 
 // data: { emp_type, monthlyNet, loan_amount, credit_range, job_years, age }
@@ -157,7 +161,7 @@ async function verifyWithClaude(selfReported) {
 
   content.push({
     type: 'text',
-    text: `The applicant self-reported: annual income $${selfReported.annual_income} (${selfReported.income_type}), employment type "${selfReported.emp_type}", credit range "${selfReported.credit_range}", name "${selfReported.first_name} ${selfReported.last_name}", date of birth ${selfReported.dob}.
+    text: `The applicant self-reported: annual net income $${selfReported.annual_income}${selfReported.annual_income_gross ? ` (annual gross income $${selfReported.annual_income_gross})` : ''}, employment type "${selfReported.emp_type}", credit range "${selfReported.credit_range}", name "${selfReported.first_name} ${selfReported.last_name}", date of birth ${selfReported.dob}.
 
 Read the attached document(s) and extract what you can verify. Respond with ONLY a single valid JSON object (no markdown fences, no commentary) matching exactly this shape:
 {
@@ -201,7 +205,7 @@ If a pay stub shows a weekly/biweekly/semi-monthly amount, convert it to an annu
 // CONSERVATIVE (lower) income figure when both are present, for safety in
 // a lending decision — never rounds up based on an unverified claim.
 function mergeData(selfReported, verified) {
-  const selfMonthlyNet = estimateMonthlyNet(selfReported.annual_income, selfReported.income_type);
+  const selfMonthlyNet = estimateMonthlyNet(selfReported.annual_income, selfReported.annual_income_gross);
   let monthlyNet = selfMonthlyNet;
   if (verified && verified.verified_annual_income && verified.income_confidence !== 'low') {
     const verifiedMonthlyNet = parseFloat(verified.verified_annual_income) / 12;
@@ -284,7 +288,7 @@ module.exports = async function handler(req, res) {
   } catch (err) {
     console.error('analyze-application: falling back to self-reported scoring —', err.message);
 
-    const monthlyNet = estimateMonthlyNet(selfReported.annual_income, selfReported.income_type);
+    const monthlyNet = estimateMonthlyNet(selfReported.annual_income, selfReported.annual_income_gross);
     const { total, tier, approvedAmount, decision, reasons } = decide(null, { ...selfReported, monthlyNet }, requestedAmount);
 
     // Persist the fallback decision too (not just the status) so the owner
