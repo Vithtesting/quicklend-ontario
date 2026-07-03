@@ -283,14 +283,26 @@ module.exports = async function handler(req, res) {
     res.status(200).json({ ok: true, decision, tier, requestedAmount, approvedAmount, score: total, reasons, verified });
   } catch (err) {
     console.error('analyze-application: falling back to self-reported scoring —', err.message);
-    try {
-      await updateSupabase(appId, { doc_analysis_status: 'failed_fallback_self_reported', analyzed_at: new Date().toISOString() });
-    } catch (e2) {
-      console.error('Also failed to record fallback status in Supabase:', e2.message);
-    }
 
     const monthlyNet = estimateMonthlyNet(selfReported.annual_income, selfReported.income_type);
     const { total, tier, approvedAmount, decision, reasons } = decide(null, { ...selfReported, monthlyNet }, requestedAmount);
+
+    // Persist the fallback decision too (not just the status) so the owner
+    // dashboard shows the same result the client saw, even when document
+    // verification itself failed/was unavailable.
+    try {
+      await updateSupabase(appId, {
+        doc_analysis_status: 'failed_fallback_self_reported',
+        ai_decision: decision,
+        ai_approved_amount: approvedAmount,
+        ai_score: total,
+        ai_reasons: reasons,
+        analyzed_at: new Date().toISOString(),
+      });
+    } catch (e2) {
+      console.error('Also failed to record fallback decision in Supabase:', e2.message);
+    }
+
     res.status(200).json({ ok: true, decision, tier, requestedAmount, approvedAmount, score: total, reasons, verified: null, fallback: true });
   }
 };
