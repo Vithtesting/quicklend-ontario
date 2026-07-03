@@ -71,9 +71,6 @@
     input.error, select.error { border-color: var(--danger); }
     .hint { font-size: .76rem; color: var(--muted); }
 
-    .income-toggle { display: flex; gap: .4rem; margin-top: .1rem; }
-    .toggle-btn { flex: 1; border: 1.5px solid var(--border); background: #fff; color: var(--muted); border-radius: 6px; padding: .35rem .5rem; font-size: .78rem; font-weight: 600; cursor: pointer; transition: all .15s; }
-    .toggle-btn.active { border-color: var(--primary); background: #eff6ff; color: var(--primary); }
 
     .upload-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all .2s; position: relative; background: #f9fafb; }
     .upload-zone:hover, .upload-zone.drag { border-color: var(--primary); background: #eff6ff; }
@@ -273,15 +270,17 @@
           </div>
           <div class="row row-2" style="margin-top:1rem">
             <div class="field">
-              <label>Annual Income ($) <span class="req">*</span></label>
+              <label>Annual Income – Net ($) <span class="req">*</span></label>
               <input type="number" id="annualIncome" placeholder="e.g. 42000" min="0" />
-              <div class="income-toggle" id="incomeToggle">
-                <button type="button" class="toggle-btn active" data-value="net" onclick="setIncomeType('net')">Net (take-home)</button>
-                <button type="button" class="toggle-btn" data-value="gross" onclick="setIncomeType('gross')">Gross (before tax)</button>
-              </div>
-              <input type="hidden" id="incomeType" value="net" />
-              <span class="hint">Total yearly income — tell us if that's before or after tax</span>
+              <span class="hint">Take-home pay after taxes, for the year</span>
             </div>
+            <div class="field">
+              <label>Annual Income – Gross ($)</label>
+              <input type="number" id="annualIncomeGross" placeholder="e.g. 55000" min="0" />
+              <span class="hint">Before taxes, for the year (optional)</span>
+            </div>
+          </div>
+          <div class="row row-2" style="margin-top:1rem">
             <div class="field">
               <label>Years at Current Job</label>
               <select id="jobYears">
@@ -489,20 +488,18 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 /* ─── State ─── */
 let uploadedFiles = { income: [], credit: [], id: [] };
 
-/* ─── Income type toggle (Gross vs Net) ───
-   GROSS_TO_NET_FACTOR is a flat estimate (not a real tax-bracket calc) for
-   converting a Gross annual figure into an estimated Net figure so the score
-   engine always works off a consistent net-income basis. Adjust this single
-   constant if you want a more precise Ontario tax-bracket calculation later. */
+/* ─── Income helper ───
+   The form collects Annual Income – Net (required) and Annual Income –
+   Gross (optional, for cross-checking against documents). Scoring always
+   uses Net directly when given. GROSS_TO_NET_FACTOR is only a fallback flat
+   estimate (not a real tax-bracket calc) used if Net was left blank but
+   Gross was filled in — adjust this constant for more precision later. */
 const GROSS_TO_NET_FACTOR = 0.78;
-function setIncomeType(type) {
-  document.getElementById('incomeType').value = type;
-  document.querySelectorAll('#incomeToggle .toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.value === type));
-}
-function estimateMonthlyNet(annualIncome, incomeType) {
-  const annual = parseFloat(annualIncome) || 0;
-  const net = incomeType === 'gross' ? annual * GROSS_TO_NET_FACTOR : annual;
-  return net / 12;
+function estimateMonthlyNet(annualNet, annualGross) {
+  const net = parseFloat(annualNet) || 0;
+  if (net > 0) return net / 12;
+  const gross = parseFloat(annualGross) || 0;
+  return (gross * GROSS_TO_NET_FACTOR) / 12;
 }
 
 /* ─── Page nav ─── */
@@ -609,7 +606,7 @@ function calcScore(data) {
 
   s.employment = { fulltime:30, parttime:18, selfemployed:15, retired:20, other:8 }[data.emp_type] || 0;
 
-  const monthlyNet = data.monthly_income != null ? parseFloat(data.monthly_income) : estimateMonthlyNet(data.annual_income, data.income_type);
+  const monthlyNet = data.monthly_income != null ? parseFloat(data.monthly_income) : estimateMonthlyNet(data.annual_income, data.annual_income_gross);
   const ratio = (monthlyNet * 3) / (parseFloat(data.loan_amount) || 1);
   s.incomeRatio = ratio >= 2 ? 30 : ratio >= 1.5 ? 24 : ratio >= 1 ? 16 : ratio >= 0.5 ? 8 : 0;
 
@@ -686,9 +683,9 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
     city:           document.getElementById('city').value.trim(),
     emp_type:       document.getElementById('empType').value,
     employer:       document.getElementById('employer').value.trim(),
-    annual_income:  parseFloat(document.getElementById('annualIncome').value),
-    income_type:    document.getElementById('incomeType').value,
-    monthly_income: estimateMonthlyNet(document.getElementById('annualIncome').value, document.getElementById('incomeType').value),
+    annual_income:        parseFloat(document.getElementById('annualIncome').value) || 0,
+    annual_income_gross:  parseFloat(document.getElementById('annualIncomeGross').value || 0) || null,
+    monthly_income:       estimateMonthlyNet(document.getElementById('annualIncome').value, document.getElementById('annualIncomeGross').value),
     job_years:      document.getElementById('jobYears').value,
     credit_range:   document.getElementById('creditRange').value,
     existing_debt:  parseFloat(document.getElementById('existingDebt').value || 0),
@@ -841,7 +838,8 @@ async function loadDashboard() {
           <div class="detail-item"><div class="d-label">DOB</div><div class="d-val">${a.dob} (age ${a.age})</div></div>
           <div class="detail-item"><div class="d-label">Employment</div><div class="d-val">${a.emp_type}</div></div>
           <div class="detail-item"><div class="d-label">Employer</div><div class="d-val">${a.employer || '—'}</div></div>
-          <div class="detail-item"><div class="d-label">Annual Income</div><div class="d-val">$${(a.annual_income||0).toLocaleString()} (${a.income_type||'net'})</div></div>
+          <div class="detail-item"><div class="d-label">Annual Income (Net)</div><div class="d-val">$${(a.annual_income||0).toLocaleString()}</div></div>
+          <div class="detail-item"><div class="d-label">Annual Income (Gross)</div><div class="d-val">${a.annual_income_gross ? '$' + a.annual_income_gross.toLocaleString() : '—'}</div></div>
           <div class="detail-item"><div class="d-label">Existing Debt</div><div class="d-val">$${(a.existing_debt||0).toLocaleString()}</div></div>
           <div class="detail-item"><div class="d-label">Loan Purpose</div><div class="d-val">${a.loan_purpose || '—'}</div></div>
           <div class="detail-item"><div class="d-label">Credit Range</div><div class="d-val">${a.credit_range || '—'}</div></div>
