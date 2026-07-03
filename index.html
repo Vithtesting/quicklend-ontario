@@ -71,6 +71,10 @@
     input.error, select.error { border-color: var(--danger); }
     .hint { font-size: .76rem; color: var(--muted); }
 
+    .income-toggle { display: flex; gap: .4rem; margin-top: .1rem; }
+    .toggle-btn { flex: 1; border: 1.5px solid var(--border); background: #fff; color: var(--muted); border-radius: 6px; padding: .35rem .5rem; font-size: .78rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .toggle-btn.active { border-color: var(--primary); background: #eff6ff; color: var(--primary); }
+
     .upload-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all .2s; position: relative; background: #f9fafb; }
     .upload-zone:hover, .upload-zone.drag { border-color: var(--primary); background: #eff6ff; }
     .upload-zone.has-files { border-color: var(--success); border-style: solid; background: #f0fdf4; }
@@ -107,6 +111,12 @@
     .success-wrap { max-width: 480px; margin: 3rem auto; padding: 0 1rem; }
     .ref-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin: 1.25rem 0; font-size: .85rem; }
     .ref-box strong { display: block; font-size: 1.3rem; color: var(--primary); letter-spacing: .05em; margin-top: .25rem; }
+
+    .approved-amount { font-size: 2.4rem; font-weight: 800; color: var(--success); margin: .5rem 0; }
+    .reason-list { text-align: left; margin: 1rem 0; }
+    .reason-item { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: .75rem 1rem; margin-bottom: .6rem; }
+    .reason-item .r-title { font-weight: 700; font-size: .85rem; color: #991b1b; }
+    .reason-item .r-tip { font-size: .8rem; color: #7f1d1d; margin-top: .25rem; line-height: 1.5; }
 
     .login-wrap { max-width: 380px; margin: 4rem auto; padding: 0 1rem; }
     .login-wrap .card-body { padding: 2rem; }
@@ -263,9 +273,14 @@
           </div>
           <div class="row row-2" style="margin-top:1rem">
             <div class="field">
-              <label>Monthly Net Income ($) <span class="req">*</span></label>
-              <input type="number" id="monthlyIncome" placeholder="e.g. 3500" min="0" />
-              <span class="hint">Take-home pay after taxes</span>
+              <label>Annual Income ($) <span class="req">*</span></label>
+              <input type="number" id="annualIncome" placeholder="e.g. 42000" min="0" />
+              <div class="income-toggle" id="incomeToggle">
+                <button type="button" class="toggle-btn active" data-value="net" onclick="setIncomeType('net')">Net (take-home)</button>
+                <button type="button" class="toggle-btn" data-value="gross" onclick="setIncomeType('gross')">Gross (before tax)</button>
+              </div>
+              <input type="hidden" id="incomeType" value="net" />
+              <span class="hint">Total yearly income — tell us if that's before or after tax</span>
             </div>
             <div class="field">
               <label>Years at Current Job</label>
@@ -372,16 +387,11 @@
   </div>
 </div>
 
-<!-- ══ PAGE: SUCCESS ══ -->
-<div id="page-success" class="page">
+<!-- ══ PAGE: RESULT ══ -->
+<div id="page-result" class="page">
   <div class="success-wrap">
-    <div class="card" style="padding:2.5rem 2rem;text-align:center">
-      <div style="font-size:3.5rem;margin-bottom:1rem">✅</div>
-      <h2 style="font-size:1.5rem;font-weight:800;margin-bottom:.5rem">Application Submitted!</h2>
-      <p style="color:var(--muted);line-height:1.6">Thank you! We've received your application and will review it shortly. You'll hear back within 1–2 business days.</p>
-      <div class="ref-box">Reference Number<br><strong id="refNum">QL-000000</strong></div>
-      <p style="font-size:.8rem;color:var(--muted)">Save this number for your records.</p>
-      <button onclick="showPage('page-apply')" class="submit-btn" style="margin-top:1.5rem;max-width:220px;display:inline-block">New Application</button>
+    <div class="card" style="padding:2.5rem 2rem;text-align:center" id="resultCard">
+      <!-- populated by renderResult() in the script block -->
     </div>
   </div>
 </div>
@@ -478,6 +488,22 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* ─── State ─── */
 let uploadedFiles = { income: [], credit: [], id: [] };
+
+/* ─── Income type toggle (Gross vs Net) ───
+   GROSS_TO_NET_FACTOR is a flat estimate (not a real tax-bracket calc) for
+   converting a Gross annual figure into an estimated Net figure so the score
+   engine always works off a consistent net-income basis. Adjust this single
+   constant if you want a more precise Ontario tax-bracket calculation later. */
+const GROSS_TO_NET_FACTOR = 0.78;
+function setIncomeType(type) {
+  document.getElementById('incomeType').value = type;
+  document.querySelectorAll('#incomeToggle .toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.value === type));
+}
+function estimateMonthlyNet(annualIncome, incomeType) {
+  const annual = parseFloat(annualIncome) || 0;
+  const net = incomeType === 'gross' ? annual * GROSS_TO_NET_FACTOR : annual;
+  return net / 12;
+}
 
 /* ─── Page nav ─── */
 function showPage(id) {
@@ -583,7 +609,8 @@ function calcScore(data) {
 
   s.employment = { fulltime:30, parttime:18, selfemployed:15, retired:20, other:8 }[data.emp_type] || 0;
 
-  const ratio = (parseFloat(data.monthly_income) * 3) / (parseFloat(data.loan_amount) || 1);
+  const monthlyNet = data.monthly_income != null ? parseFloat(data.monthly_income) : estimateMonthlyNet(data.annual_income, data.income_type);
+  const ratio = (monthlyNet * 3) / (parseFloat(data.loan_amount) || 1);
   s.incomeRatio = ratio >= 2 ? 30 : ratio >= 1.5 ? 24 : ratio >= 1 ? 16 : ratio >= 0.5 ? 8 : 0;
 
   s.credit = { excellent:25, verygood:20, good:14, fair:7, poor:0, unknown:5 }[data.credit_range] || 0;
@@ -601,7 +628,7 @@ const scoreLabel = n => n>=70?'High Confidence':n>=50?'Moderate':n>=30?'Review C
 document.getElementById('appForm').addEventListener('submit', async function(e) {
   e.preventDefault();
 
-  const req = ['firstName','lastName','email','phone','addressInput','city','dob','empType','monthlyIncome','creditRange','loanAmount','loanPurpose'];
+  const req = ['firstName','lastName','email','phone','addressInput','city','dob','empType','annualIncome','creditRange','loanAmount','loanPurpose'];
   let valid = true;
   req.forEach(id => {
     const el = document.getElementById(id);
@@ -659,7 +686,9 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
     city:           document.getElementById('city').value.trim(),
     emp_type:       document.getElementById('empType').value,
     employer:       document.getElementById('employer').value.trim(),
-    monthly_income: parseFloat(document.getElementById('monthlyIncome').value),
+    annual_income:  parseFloat(document.getElementById('annualIncome').value),
+    income_type:    document.getElementById('incomeType').value,
+    monthly_income: estimateMonthlyNet(document.getElementById('annualIncome').value, document.getElementById('incomeType').value),
     job_years:      document.getElementById('jobYears').value,
     credit_range:   document.getElementById('creditRange').value,
     existing_debt:  parseFloat(document.getElementById('existingDebt').value || 0),
@@ -668,6 +697,7 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
     income_files:   urls.income,
     credit_files:   urls.credit,
     id_files:       urls.id,
+    doc_analysis_status: 'pending',
   };
 
   const { total, breakdown } = calcScore(appData);
@@ -678,16 +708,77 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
   if (error) { toast('❌ Error saving application. Please try again.'); console.error(error); btn.disabled = false; btn.textContent = 'Submit My Application →'; progress.classList.remove('show'); return; }
 
   fill.style.width = '100%';
-  setTimeout(() => {
-    document.getElementById('refNum').textContent = appId;
-    showPage('page-success');
-    document.getElementById('appForm').reset();
-    uploadedFiles = { income: [], credit: [], id: [] };
-    renderFileList('income'); renderFileList('credit'); renderFileList('id');
-    btn.disabled = false; btn.textContent = 'Submit My Application →';
-    progress.classList.remove('show'); fill.style.width = '0%';
-  }, 400);
+  label.textContent = 'Analyzing your documents… this can take up to 30s';
+
+  let decision = null;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 28000);
+    const resp = await fetch('/api/analyze-application', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appId, selfReported: appData }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (resp.ok) decision = await resp.json();
+  } catch (err) {
+    console.error('Document analysis failed or timed out:', err);
+  }
+
+  renderResult(decision, appId);
+  showPage('page-result');
+  document.getElementById('appForm').reset();
+  uploadedFiles = { income: [], credit: [], id: [] };
+  renderFileList('income'); renderFileList('credit'); renderFileList('id');
+  btn.disabled = false; btn.textContent = 'Submit My Application →';
+  progress.classList.remove('show'); fill.style.width = '0%';
 });
+
+/* ─── Result page rendering ───
+   decision is the JSON returned by /api/analyze-application, or null if
+   that call failed/timed out (network issue, cold start, AI outage) — in
+   that case we fall back to a plain "submitted, under manual review"
+   message so the client is never stuck or shown a scary error. */
+function renderResult(decision, appId) {
+  const card = document.getElementById('resultCard');
+  if (!decision || !decision.ok) {
+    card.innerHTML = `
+      <div style="font-size:3.5rem;margin-bottom:1rem">✅</div>
+      <h2 style="font-size:1.5rem;font-weight:800;margin-bottom:.5rem">Application Submitted!</h2>
+      <p style="color:var(--muted);line-height:1.6">Thanks! We've received your application and documents. Our automated review didn't finish in time, so a team member will review it manually and get back to you within 1–2 business days.</p>
+      <div class="ref-box">Reference Number<br><strong>${appId}</strong></div>
+      <button onclick="showPage('page-apply')" class="submit-btn" style="margin-top:1.5rem;max-width:220px;display:inline-block">New Application</button>`;
+    return;
+  }
+
+  if (decision.decision === 'approved') {
+    const reduced = decision.approvedAmount < decision.requestedAmount;
+    card.innerHTML = `
+      <div style="font-size:3.5rem;margin-bottom:1rem">🎉</div>
+      <h2 style="font-size:1.4rem;font-weight:800;margin-bottom:.25rem">You're Pre-Approved!</h2>
+      <div class="approved-amount">$${decision.approvedAmount.toLocaleString()}</div>
+      ${reduced
+        ? `<p style="color:var(--muted);font-size:.85rem;margin-bottom:.5rem">You requested $${decision.requestedAmount.toLocaleString()}. Based on your income and credit info, this is what we can offer right now.</p>`
+        : `<p style="color:var(--muted);font-size:.85rem;margin-bottom:.5rem">This matches your requested amount.</p>`}
+      <p style="color:var(--muted);line-height:1.6;font-size:.8rem">This is a preliminary decision based on your application and uploaded documents. A team member will confirm final terms before funds are sent.</p>
+      <div class="ref-box">Reference Number<br><strong>${appId}</strong></div>
+      <button onclick="showPage('page-apply')" class="submit-btn" style="margin-top:1.5rem;max-width:220px;display:inline-block">New Application</button>`;
+  } else {
+    const reasons = (decision.reasons || []).map(r => `
+      <div class="reason-item">
+        <div class="r-title">${r.title}</div>
+        <div class="r-tip">${r.tip}</div>
+      </div>`).join('');
+    card.innerHTML = `
+      <div style="font-size:3.5rem;margin-bottom:1rem">📋</div>
+      <h2 style="font-size:1.4rem;font-weight:800;margin-bottom:.25rem">Not Approved Right Now</h2>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem">We're unable to offer the requested $${decision.requestedAmount.toLocaleString()} today. Here's why, and how to improve your chances next time:</p>
+      <div class="reason-list">${reasons || '<p style="color:var(--muted);font-size:.85rem">Your overall profile didn’t meet our current lending criteria.</p>'}</div>
+      <div class="ref-box">Reference Number<br><strong>${appId}</strong></div>
+      <button onclick="showPage('page-apply')" class="submit-btn" style="margin-top:1.5rem;max-width:220px;display:inline-block">Apply Again</button>`;
+  }
+}
 
 /* ─── Owner login ─── */
 function ownerLogin() {
@@ -750,7 +841,7 @@ async function loadDashboard() {
           <div class="detail-item"><div class="d-label">DOB</div><div class="d-val">${a.dob} (age ${a.age})</div></div>
           <div class="detail-item"><div class="d-label">Employment</div><div class="d-val">${a.emp_type}</div></div>
           <div class="detail-item"><div class="d-label">Employer</div><div class="d-val">${a.employer || '—'}</div></div>
-          <div class="detail-item"><div class="d-label">Monthly Income</div><div class="d-val">$${(a.monthly_income||0).toLocaleString()}</div></div>
+          <div class="detail-item"><div class="d-label">Annual Income</div><div class="d-val">$${(a.annual_income||0).toLocaleString()} (${a.income_type||'net'})</div></div>
           <div class="detail-item"><div class="d-label">Existing Debt</div><div class="d-val">$${(a.existing_debt||0).toLocaleString()}</div></div>
           <div class="detail-item"><div class="d-label">Loan Purpose</div><div class="d-val">${a.loan_purpose || '—'}</div></div>
           <div class="detail-item"><div class="d-label">Credit Range</div><div class="d-val">${a.credit_range || '—'}</div></div>
@@ -764,6 +855,13 @@ async function loadDashboard() {
               <span class="b-pts">${v} pts</span>
             </div>`).join('')}
         </div>
+        ${a.doc_analysis_status ? `
+        <div class="score-breakdown">
+          <h4>AI Document Review — ${a.doc_analysis_status === 'complete' ? (a.ai_decision === 'approved' ? `✅ Recommend approving $${(a.ai_approved_amount||0).toLocaleString()}` : '⛔ Recommend declining') : a.doc_analysis_status === 'failed_fallback_self_reported' ? '⚠️ Analysis failed — self-reported data only' : '⏳ Pending'}</h4>
+          ${a.ai_verified_income ? `<div class="detail-item" style="margin-bottom:.5rem"><div class="d-label">AI-Verified Income</div><div class="d-val">$${Math.round(a.ai_verified_income).toLocaleString()}/yr</div></div>` : ''}
+          ${a.ai_verified_credit_range ? `<div class="detail-item" style="margin-bottom:.5rem"><div class="d-label">AI-Verified Credit Range</div><div class="d-val">${a.ai_verified_credit_range}</div></div>` : ''}
+          ${(a.ai_flags && a.ai_flags.length) ? `<div class="detail-item"><div class="d-label">Flags</div><div class="d-val" style="color:var(--danger)">${a.ai_flags.join('; ')}</div></div>` : ''}
+        </div>` : ''}
         ${incomeFiles||creditFiles||idFiles ? `
         <div class="file-links">
           <h4>Documents</h4>
