@@ -75,6 +75,8 @@
     .upload-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all .2s; position: relative; background: #f9fafb; }
     .upload-zone:hover, .upload-zone.drag { border-color: var(--primary); background: #eff6ff; }
     .upload-zone.has-files { border-color: var(--success); border-style: solid; background: #f0fdf4; }
+    .upload-zone.zone-error { border-color: var(--danger); border-style: solid; background: #fef2f2; animation: zone-flash 1.2s ease-in-out 2; }
+    @keyframes zone-flash { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 0 4px rgba(200,30,30,.15); } }
     .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; border: none; }
     .upload-zone .icon { font-size: 1.8rem; margin-bottom: .4rem; }
     .upload-zone p { font-size: .85rem; color: var(--muted); }
@@ -621,9 +623,13 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 3500);
 }
 
-/* ─── File handling ─── */
+/* ─── File handling ───
+   input.value is reset after reading so selecting the exact same file again
+   (e.g. after removing it) still fires a fresh 'change' event — browsers
+   don't fire 'change' if the FileList looks identical to the last selection. */
 function handleFiles(type, input) {
   uploadedFiles[type] = [...uploadedFiles[type], ...Array.from(input.files)];
+  input.value = '';
   renderFileList(type);
 }
 function removeFile(type, idx) {
@@ -644,6 +650,7 @@ function renderFileList(type) {
   // Toggle zone style
   if (files.length > 0) {
     zone.classList.add('has-files');
+    zone.classList.remove('zone-error');
   } else {
     zone.classList.remove('has-files');
   }
@@ -743,8 +750,23 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
   const age = today.getFullYear() - dob.getFullYear() -
     (today < new Date(today.getFullYear(), dob.getMonth(), dob.getDate()) ? 1 : 0);
   if (age < 18) { document.getElementById('dob').classList.add('error'); toast('⚠️ Applicant must be 18 or older.'); return; }
-  if (uploadedFiles.income.length === 0) { toast('⚠️ Please upload at least one proof of income.'); return; }
-  if (uploadedFiles.id.length === 0) { toast('⚠️ Please upload a government-issued ID.'); return; }
+
+  document.getElementById('incomeZone').classList.remove('zone-error');
+  document.getElementById('idZone').classList.remove('zone-error');
+  if (uploadedFiles.income.length === 0) {
+    const zone = document.getElementById('incomeZone');
+    zone.classList.add('zone-error');
+    zone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast('⚠️ Please upload at least one proof of income (highlighted below).');
+    return;
+  }
+  if (uploadedFiles.id.length === 0) {
+    const zone = document.getElementById('idZone');
+    zone.classList.add('zone-error');
+    zone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast('⚠️ Please upload a government-issued ID (highlighted below).');
+    return;
+  }
   const loanAmt = parseFloat(document.getElementById('loanAmount').value);
   if (loanAmt < 500 || loanAmt > 15000) { document.getElementById('loanAmount').classList.add('error'); toast('⚠️ Loan must be $500–$15,000.'); return; }
 
