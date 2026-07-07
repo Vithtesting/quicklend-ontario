@@ -8,10 +8,16 @@
 // onto the application row in Supabase, and returns it to the client so
 // the results page can render immediately.
 //
-// Required environment variable — set this in the Vercel dashboard under
+// Required environment variables — set these in the Vercel dashboard under
 // Project Settings -> Environment Variables -> Production (do NOT commit
-// it to this file or paste it into chat):
+// them to this file or paste them into chat):
 //   ANTHROPIC_API_KEY
+//   SUPABASE_SERVICE_ROLE_KEY   - added 2026-07-07. Needed because the
+//     applications table's RLS was locked down (see CLAUDE.md) so the
+//     public anon key can no longer UPDATE rows or read documents via a
+//     signed URL — this function now writes the AI decision back and signs
+//     document URLs using the service_role key instead, entirely
+//     server-side. Never expose this key client-side.
 //
 // Optional environment variable:
 //   CLAUDE_MODEL   (defaults to 'claude-sonnet-5')
@@ -24,8 +30,14 @@
 // Keep the score weights below in sync with calcScore() in index.html.
 
 const SUPABASE_URL = 'https://kngngdqcrqurmcmssjmv.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_KlfDOcndtEmcRlBBv7HwDA_i_kUX-Zp';
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
+
+// Bump this whenever calcScore()'s weights/logic change, and add an entry to
+// CLAUDE.md's "Scoring Version History" — this is stamped onto every
+// application so a future formula change doesn't retroactively make old
+// applications' scores look inconsistent or lose the context of what rules
+// produced them. Keep in sync with SCORING_VERSION in index.html.
+const SCORING_VERSION = 'v1-2026-07-03';
 
 // Flat estimate for converting a Gross annual figure to Net — keep in sync
 // with GROSS_TO_NET_FACTOR in index.html.
@@ -137,9 +149,10 @@ function getStoragePath(f) {
 }
 
 async function getSignedUrl(path, expiresIn = 300) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/loan-documents/${path}`, {
     method: 'POST',
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'content-type': 'application/json' },
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({ expiresIn }),
   });
   if (!resp.ok) {
@@ -262,11 +275,12 @@ function mergeData(selfReported, verified) {
 }
 
 async function updateSupabase(appId, fields) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/applications?id=eq.${encodeURIComponent(appId)}`, {
     method: 'PATCH',
     headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
+      apikey: key,
+      Authorization: `Bearer ${key}`,
       'content-type': 'application/json',
       Prefer: 'return=minimal',
     },
@@ -321,6 +335,7 @@ module.exports = async function handler(req, res) {
       ai_verified_credit_range: verified.verified_credit_range ?? null,
       ai_flags: verified.flags || [],
       analyzed_at: new Date().toISOString(),
+      scoring_version: SCORING_VERSION,
     });
 
     res.status(200).json({ ok: true, decision, tier, requestedAmount, approvedAmount, score: total, reasons, verified });
@@ -341,6 +356,7 @@ module.exports = async function handler(req, res) {
         ai_score: total,
         ai_reasons: reasons,
         analyzed_at: new Date().toISOString(),
+        scoring_version: SCORING_VERSION,
       });
     } catch (e2) {
       console.error('Also failed to record fallback decision in Supabase:', e2.message);
