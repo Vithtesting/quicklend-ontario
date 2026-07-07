@@ -107,19 +107,58 @@ function buildReasons(breakdown) {
   return REASON_LIBRARY.filter((r) => r.test(breakdown)).map((r) => ({ title: r.title, tip: r.tip }));
 }
 
-function guessMediaType(url) {
-  const ext = (url.split('?')[0].split('.').pop() || '').toLowerCase();
+function guessMediaType(pathOrUrl) {
+  const ext = (pathOrUrl.split('?')[0].split('.').pop() || '').toLowerCase();
   if (ext === 'pdf') return 'application/pdf';
   if (ext === 'png') return 'image/png';
   if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
   return 'application/octet-stream';
 }
 
-async function fetchAsBase64(url) {
-  const resp = await fetch(url);
+// The loan-documents bucket is private (2026-07-07) — these are sensitive
+// client documents (ID, credit report, paystub), so we no longer read them
+// via a permanent public URL. Instead we mint a short-lived signed URL
+// server-side (works with the anon/publishable key because of the existing
+// loan_documents_public_select RLS policy) and fetch that instead.
+//
+// Extracts a storage path from a file record — new rows store { name, path }
+// directly; older rows (from before the bucket went private) only have a
+// { name, url } public URL, so fall back to parsing the path out of that.
+// Keep this in sync with getStoragePath() in index.html.
+function getStoragePath(f) {
+  if (!f) return null;
+  if (f.path) return f.path;
+  if (f.url) {
+    const marker = '/loan-documents/';
+    const idx = f.url.indexOf(marker);
+    if (idx !== -1) return decodeURIComponent(f.url.slice(idx + marker.length).split('?')[0]);
+  }
+  return null;
+}
+
+async function getSignedUrl(path, expiresIn = 300) {
+  const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/loan-documents/${path}`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ expiresIn }),
+  });
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error(`Failed to sign URL for ${path} (${resp.status}): ${t.slice(0, 200)}`);
+  }
+  const json = await resp.json();
+  if (!json.signedURL) throw new Error(`Sign response missing signedURL for ${path}`);
+  return `${SUPABASE_URL}/storage/v1${json.signedURL}`;
+}
+
+async function fetchAsBase64(fileEntry) {
+  const path = getStoragePath(fileEntry);
+  if (!path) throw new Error(`Could not determine storage path for ${fileEntry && fileEntry.name}`);
+  const signedUrl = await getSignedUrl(path);
+  const resp = await fetch(signedUrl);
   if (!resp.ok) throw new Error(`Failed to fetch document (${resp.status})`);
   let mediaType = resp.headers.get('content-type') || '';
-  if (!mediaType || mediaType === 'application/octet-stream') mediaType = guessMediaType(url);
+  if (!mediaType || mediaType === 'application/octet-stream') mediaType = guessMediaType(path);
   const buf = await resp.arrayBuffer();
   return { base64: Buffer.from(buf).toString('base64'), mediaType };
 }
@@ -147,7 +186,7 @@ async function verifyWithClaude(selfReported) {
   const content = [];
   for (const doc of docs) {
     try {
-      const { base64, mediaType } = await fetchAsBase64(doc.url);
+      const { base64, mediaType } = await fetchAsBase64(doc);
       const block = toContentBlock(mediaType, base64);
       if (block) {
         content.push({ type: 'text', text: `Document: ${doc.label} (filename: ${doc.name})` });
