@@ -75,6 +75,8 @@
     .upload-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all .2s; position: relative; background: #f9fafb; }
     .upload-zone:hover, .upload-zone.drag { border-color: var(--primary); background: #eff6ff; }
     .upload-zone.has-files { border-color: var(--success); border-style: solid; background: #f0fdf4; }
+    .consent-detail.open, #consentDetail.open { display: block !important; }
+    #consentField.zone-error { background: #fef2f2; border-radius: 8px; padding: .5rem; animation: zone-flash 1.2s ease-in-out 2; }
     .upload-zone.zone-error { border-color: var(--danger); border-style: solid; background: #fef2f2; animation: zone-flash 1.2s ease-in-out 2; }
     @keyframes zone-flash { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 0 4px rgba(200,30,30,.15); } }
     .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; border: none; }
@@ -435,6 +437,9 @@
           </div>
 
           <div class="section-label">Document Upload</div>
+          <p style="font-size:.8rem;color:var(--muted);margin:-.5rem 0 1rem;line-height:1.5">
+            🔒 Your documents are stored privately and are never posted at a public link. Only QuickLend Ontario staff (and, for automated verification, our AI review step) can access them, each time through a temporary link that expires in minutes. We use them only to verify this application.
+          </p>
           <div class="field">
             <label>Proof of Income <span class="req">*</span></label>
             <div class="upload-zone" id="incomeZone">
@@ -483,7 +488,17 @@
           </div>
 
           <div class="disclaimer">
-            <strong>⚖️ Ontario Lending Notice:</strong> By submitting this application you consent to the lender reviewing your documents to assess loan eligibility. Your information is kept confidential and used only for this application.
+            <strong>⚖️ Ontario Lending Notice:</strong> Your information is kept confidential and used only for this application.
+          </div>
+          <div class="field" id="consentField" style="margin-top:1rem;display:flex;align-items:flex-start;gap:.6rem">
+            <input type="checkbox" id="consentCheckbox" style="margin-top:.3rem;width:auto" required />
+            <label for="consentCheckbox" style="font-weight:400;font-size:.85rem;line-height:1.5">
+              I consent to QuickLend Ontario collecting, storing, and using my uploaded documents and personal information — including automated AI-assisted review of my documents — to assess this loan application.
+              <span style="display:block;margin-top:.3rem"><a href="#" onclick="document.getElementById('consentDetail').classList.toggle('open');return false" style="color:var(--primary-dark);font-size:.8rem">What does this mean? ▾</a></span>
+              <span id="consentDetail" class="consent-detail" style="display:none;margin-top:.5rem;font-size:.78rem;color:var(--muted);line-height:1.6">
+                We collect the personal and financial information you enter, plus any documents you upload (proof of income, credit report, ID, bank statement), to assess your eligibility for this loan and the amount we can responsibly offer. Some of your documents are read by an AI service (Anthropic) to verify what you entered against the documents — this happens automatically as part of your application and the results are reviewed by QuickLend Ontario staff. We do not use this information for marketing, and we do not sell it to third parties. You can contact us to ask what information we hold about you.
+              </span>
+            </label>
           </div>
           <button type="submit" class="submit-btn" id="submitBtn">Submit My Application →</button>
         </form>
@@ -508,11 +523,14 @@
       <div class="card-body">
         <h2>🔐 Owner Dashboard</h2>
         <div class="field">
+          <label>Your name <span style="color:var(--muted);font-weight:400">(optional, shown on the audit trail)</span></label>
+          <input type="text" id="ownerReviewerName" placeholder="e.g. Vith" onkeydown="if(event.key==='Enter')document.getElementById('ownerPass').focus()" />
+        </div>
+        <div class="field" style="margin-top:.75rem">
           <label>Password</label>
           <input type="password" id="ownerPass" placeholder="Enter owner password" onkeydown="if(event.key==='Enter')ownerLogin()" />
         </div>
-        <button class="submit-btn" onclick="ownerLogin()" style="margin-top:1rem">Log In</button>
-        <p style="font-size:.75rem;color:var(--muted);margin-top:.75rem;text-align:center">Default: <strong>ql2025</strong></p>
+        <button class="submit-btn" id="ownerLoginBtn" onclick="ownerLogin()" style="margin-top:1rem">Log In</button>
         <button onclick="showPage('page-apply')" class="btn-neutral" style="width:100%;margin-top:.5rem;padding:.5rem">← Back</button>
       </div>
     </div>
@@ -525,10 +543,11 @@
     <div class="dash-header">
       <div>
         <h2>Applications Dashboard</h2>
-        <p style="font-size:.85rem;color:var(--muted);margin-top:.15rem">QuickLend Ontario — Confidence Review</p>
+        <p style="font-size:.85rem;color:var(--muted);margin-top:.15rem">QuickLend Ontario — Confidence Review <span id="dashReviewerLabel"></span></p>
       </div>
       <div style="display:flex;gap:.75rem;flex-wrap:wrap">
         <button class="btn-neutral" onclick="loadDashboard()">↺ Refresh</button>
+        <button class="btn-neutral" onclick="ownerLogout()">Log Out</button>
         <button class="btn-neutral" onclick="showPage('page-apply')">← Back</button>
       </div>
     </div>
@@ -587,9 +606,12 @@ function initAutocomplete() {
 ──────────────────────────────────────────────────── */
 const SUPABASE_URL = 'https://kngngdqcrqurmcmssjmv.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_KlfDOcndtEmcRlBBv7HwDA_i_kUX-Zp';
-const OWNER_PASS   = 'ql2025'; // ← change this before going live
-
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Bump this whenever calcScore()'s weights/logic change, and add an entry to
+// CLAUDE.md's "Scoring Version History" — keep in sync with SCORING_VERSION
+// in api/analyze-application.js.
+const SCORING_VERSION = 'v1-2026-07-03';
 
 /* ─── State ─── */
 let uploadedFiles = { income: [], credit: [], id: [], bankStatement: [] };
@@ -806,6 +828,15 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
   const loanAmt = parseFloat(document.getElementById('loanAmount').value);
   if (loanAmt < 500 || loanAmt > 15000) { document.getElementById('loanAmount').classList.add('error'); toast('⚠️ Loan must be $500–$15,000.'); return; }
 
+  const consentField = document.getElementById('consentField');
+  consentField.classList.remove('zone-error');
+  if (!document.getElementById('consentCheckbox').checked) {
+    consentField.classList.add('zone-error');
+    consentField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast('⚠️ Please review and check the consent box to continue.');
+    return;
+  }
+
   const btn = document.getElementById('submitBtn');
   btn.disabled = true; btn.textContent = 'Uploading…';
   const progress = document.getElementById('uploadProgress');
@@ -870,6 +901,9 @@ document.getElementById('appForm').addEventListener('submit', async function(e) 
     id_files:       urls.id,
     bank_statement_files: urls.bankStatement,
     doc_analysis_status: 'pending',
+    scoring_version: SCORING_VERSION,
+    consent_given: true,
+    consent_timestamp: new Date().toISOString(),
   };
 
   const { total, breakdown } = calcScore(appData);
@@ -953,23 +987,60 @@ function renderResult(decision, appId) {
 }
 
 /* ─── Owner login ─── */
-function ownerLogin() {
-  if (document.getElementById('ownerPass').value === OWNER_PASS) {
+/* ─── Owner login ───
+   Real server-side auth (added 2026-07-07) — the password is checked in
+   api/dashboard.js against an env var, never in this client-side code, and
+   a signed httpOnly session cookie backs every subsequent dashboard call.
+   See CLAUDE.md for why the old client-side-only check was a real problem,
+   not just a cosmetic one. */
+async function ownerLogin() {
+  const password = document.getElementById('ownerPass').value;
+  const reviewerName = document.getElementById('ownerReviewerName').value;
+  const btn = document.getElementById('ownerLoginBtn');
+  btn.disabled = true; btn.textContent = 'Logging in…';
+  try {
+    const resp = await fetch('/api/dashboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', password, reviewerName }),
+    });
+    const json = await resp.json();
+    if (!resp.ok || !json.ok) { toast('❌ ' + (json.error || 'Incorrect password.')); return; }
     document.getElementById('ownerPass').value = '';
-    loadDashboard();
+    await loadDashboard();
     showPage('page-dashboard');
-  } else {
-    toast('❌ Incorrect password.');
+  } catch (e) {
+    toast('❌ Login failed. Please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Log In';
   }
 }
 
-/* ─── Dashboard ─── */
+function ownerLogout() {
+  fetch('/api/dashboard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'logout' }) });
+  showPage('page-login');
+}
+
+/* ─── Dashboard ───
+   All reads/writes go through api/dashboard.js (session-gated, uses the
+   service_role key server-side) — the browser no longer talks to Supabase
+   directly for this table at all. See api/dashboard.js header comment. */
 async function loadDashboard() {
   document.getElementById('appGrid').innerHTML = '<div class="loading-spinner">Loading applications…</div>';
   document.getElementById('dashStats').innerHTML = '';
 
-  const { data: apps, error } = await sb.from('applications').select('*').order('submitted_at', { ascending: false });
-  if (error) { document.getElementById('appGrid').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>Error loading applications.</p></div>'; return; }
+  const resp = await fetch('/api/dashboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'data' }),
+  });
+  if (resp.status === 401) { showPage('page-login'); return; }
+  const json = await resp.json();
+  if (!resp.ok || !json.ok) { document.getElementById('appGrid').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>Error loading applications.</p></div>'; return; }
+
+  const apps = json.applications;
+  const reviewerLabel = document.getElementById('dashReviewerLabel');
+  if (reviewerLabel) reviewerLabel.textContent = json.reviewer ? `· Logged in as ${json.reviewer}` : '';
 
   const total = apps.length;
   const pending = apps.filter(a => a.status === 'pending').length;
@@ -1008,6 +1079,15 @@ async function loadDashboard() {
     const payFreqLabel = { weekly:'Weekly', biweekly:'Biweekly', semimonthly:'Semi-Monthly', monthly:'Monthly' }[a.pay_frequency] || '—';
     const bankruptcyLabel = { no:'No', discharged:'Yes — Discharged', active:'Yes — Active' }[a.bankruptcy_status] || '—';
     const badge = a.status !== 'pending' ? `<span class="status-badge ${a.status}">${a.status}</span>` : '';
+    const auditHtml = (a.audit_history && a.audit_history.length) ? `
+      <div class="score-breakdown">
+        <h4>Audit Trail</h4>
+        ${a.audit_history.map(h => `
+          <div class="detail-item" style="margin-bottom:.4rem">
+            <div class="d-label">${new Date(h.created_at).toLocaleString('en-CA')}</div>
+            <div class="d-val">${h.action} by ${(h.actor||'').replace(/</g,'&lt;')}${h.reason ? ' — ' + h.reason.replace(/</g,'&lt;') : ''}</div>
+          </div>`).join('')}
+      </div>` : '';
     return `
     <div class="app-card score-${sc}" id="card-${a.id}">
       <div class="app-card-top" onclick="this.parentElement.querySelector('.app-card-details').classList.toggle('open')">
@@ -1064,6 +1144,7 @@ async function loadDashboard() {
           ${idFiles ? `<div><strong>ID:</strong> ${idFiles}</div>` : ''}
           ${bankStatementFiles ? `<div><strong>Bank Statement:</strong> ${bankStatementFiles}</div>` : ''}
         </div>` : ''}
+        ${auditHtml}
         <div class="action-row">
           <button class="btn-approve" onclick="updateStatus('${a.id}','approved')">✓ Approve</button>
           <button class="btn-decline" onclick="updateStatus('${a.id}','declined')">✗ Decline</button>
@@ -1074,17 +1155,22 @@ async function loadDashboard() {
   }).join('');
 }
 
+/* Every approve/decline/reset is written to audit_log (who, when, why) by
+   api/dashboard.js — prompt for an optional note so the reason is captured
+   at the moment of the decision, not reconstructed later. */
 async function updateStatus(id, status) {
-  const { error } = await sb.from('applications').update({ status }).eq('id', id);
-  if (error) { toast('❌ Error updating status.'); return; }
-  const card = document.getElementById('card-' + id);
-  if (card) {
-    const nameEl = card.querySelector('.name');
-    const existingBadge = nameEl ? nameEl.querySelector('.status-badge') : null;
-    if (existingBadge) { existingBadge.className = `status-badge ${status}`; existingBadge.textContent = status; }
-    else if (nameEl && status !== 'pending') nameEl.insertAdjacentHTML('beforeend', `<span class="status-badge ${status}">${status}</span>`);
-  }
+  let reason = null;
+  if (status === 'declined') reason = prompt('Reason for declining (optional, shown in the audit trail):', '');
+  else if (status === 'approved') reason = prompt('Note for this approval (optional):', '');
+  const resp = await fetch('/api/dashboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'update', appId: id, status, reason: reason || null }),
+  });
+  const json = await resp.json();
+  if (!resp.ok || !json.ok) { toast('❌ ' + (json.error || 'Error updating status.')); return; }
   toast(status === 'approved' ? '✅ Approved.' : status === 'declined' ? '❌ Declined.' : '↩ Reset to pending.');
+  loadDashboard();
 }
 
 function toggleDetail(id) { document.getElementById(id).classList.toggle('open'); }
