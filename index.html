@@ -170,8 +170,9 @@
 
     .file-links { margin-top: 1rem; }
     .file-links h4 { font-size: .82rem; font-weight: 700; margin-bottom: .5rem; color: #374151; }
-    .file-link-item { display: inline-block; background: #dbeafe; color: var(--primary-dark); border-radius: 5px; padding: .3rem .7rem; font-size: .78rem; text-decoration: none; margin: .2rem .2rem 0 0; font-weight: 600; }
+    .file-link-item { display: inline-block; background: #dbeafe; color: var(--primary-dark); border: none; border-radius: 5px; padding: .3rem .7rem; font-size: .78rem; text-decoration: none; margin: .2rem .2rem 0 0; font-weight: 600; font-family: inherit; cursor: pointer; }
     .file-link-item:hover { background: #bfdbfe; }
+    .file-link-item:disabled { opacity: .6; cursor: default; }
 
     .action-row { display: flex; gap: .75rem; margin-top: 1.25rem; flex-wrap: wrap; }
     .btn-approve { background: var(--success); color: #fff; border: none; border-radius: 7px; padding: .5rem 1.1rem; font-size: .85rem; font-weight: 700; cursor: pointer; }
@@ -202,7 +203,7 @@
 <div id="page-apply" class="page active">
   <div class="hero">
     <h1>Apply for a Personal Loan</h1>
-    <p>Get up to $15,000 fast. Fill in your details and upload your documents — we'll review and get back to you.</p>
+    <p>Get up to $15,000 fast. Fill in your details and upload your documents — get an instant decision, no waiting.</p>
     <div class="badges">
       <span class="badge">🏦 Ontario Licensed</span>
       <span class="badge">🔒 Secure Upload</span>
@@ -696,14 +697,49 @@ Object.keys(ZONE_TYPE).forEach(id => {
   });
 });
 
-/* ─── Upload file to Supabase Storage ─── */
+/* ─── Upload file to Supabase Storage ───
+   The bucket is private (2026-07-07) — client/ID/income/credit documents
+   are sensitive, so we no longer generate a permanent public URL. Instead
+   we store the storage path, and generate short-lived signed URLs on
+   demand whenever someone actually needs to view the file (see viewDoc()
+   below, and the matching signing logic in api/analyze-application.js). */
 async function uploadFile(file, appId, type) {
   const path = `${appId}/${type}/${Date.now()}_${file.name}`;
   const { error } = await sb.storage.from('loan-documents').upload(path, file, { upsert: true });
   if (error) throw error;
-  const { data } = sb.storage.from('loan-documents').getPublicUrl(path);
-  return { name: file.name, url: data.publicUrl };
+  return { name: file.name, path };
 }
+
+/* Extracts a storage path from a file record — new rows store { name, path }
+   directly; older rows (from before the bucket went private) only have a
+   { name, url } public URL, so fall back to parsing the path out of that. */
+function getStoragePath(f) {
+  if (!f) return null;
+  if (f.path) return f.path;
+  if (f.url) {
+    const marker = '/loan-documents/';
+    const idx = f.url.indexOf(marker);
+    if (idx !== -1) return decodeURIComponent(f.url.slice(idx + marker.length).split('?')[0]);
+  }
+  return null;
+}
+
+/* Opens a document for the owner by generating a fresh signed URL (5 min
+   expiry) at click-time, rather than storing/using a permanent link. */
+async function viewDoc(path, btn) {
+  if (!path) { toast('❌ Could not determine file location.'); return; }
+  const orig = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  const { data, error } = await sb.storage.from('loan-documents').createSignedUrl(path, 300);
+  if (btn) { btn.disabled = false; btn.textContent = orig; }
+  if (error || !data) { toast('❌ Could not open document.'); console.error(error); return; }
+  window.open(data.signedUrl, '_blank');
+}
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.view-doc-btn');
+  if (!btn) return;
+  viewDoc(btn.dataset.path, btn);
+});
 
 /* ─── Confidence Score Engine (0–100) ───────────────
    Employment   : 0–30 pts
@@ -956,10 +992,17 @@ async function loadDashboard() {
     const sc = scoreClass(a.score || 0);
     const sl = scoreLabel(a.score || 0);
     const bd = a.score_breakdown || {};
-    const incomeFiles = (a.income_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
-    const creditFiles = (a.credit_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
-    const idFiles = (a.id_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
-    const bankStatementFiles = (a.bank_statement_files || []).map(f => `<a class="file-link-item" href="${f.url}" target="_blank">${f.name}</a>`).join('');
+    const renderFileLinks = (files) => (files || []).map(f => {
+      const path = getStoragePath(f);
+      const label = (f.name || 'file').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if (!path) return `<span class="file-link-item" style="opacity:.6">${label} (unavailable)</span>`;
+      const safePath = path.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      return `<button type="button" class="file-link-item view-doc-btn" data-path="${safePath}">${label}</button>`;
+    }).join('');
+    const incomeFiles = renderFileLinks(a.income_files);
+    const creditFiles = renderFileLinks(a.credit_files);
+    const idFiles = renderFileLinks(a.id_files);
+    const bankStatementFiles = renderFileLinks(a.bank_statement_files);
     const yearsLabel = v => ({'0':'< 6 months','1':'6mo–1yr','2':'1–3 yrs','5':'3–5 yrs','10':'5+ yrs'}[v] || '—');
     const housingLabel = { own:'Own', rent:'Rent', family:'Live with Family', other:'Other' }[a.housing_status] || '—';
     const payFreqLabel = { weekly:'Weekly', biweekly:'Biweekly', semimonthly:'Semi-Monthly', monthly:'Monthly' }[a.pay_frequency] || '—';
