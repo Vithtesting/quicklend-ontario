@@ -159,7 +159,10 @@ module.exports = async function handler(req, res) {
         sbFetch('applications?select=*&order=submitted_at.desc'),
         sbFetch('audit_log?select=*&order=created_at.desc'),
       ]);
-      if (!appsResp.ok) throw new Error(`Failed to load applications (${appsResp.status})`);
+      if (!appsResp.ok) {
+        const errText = await appsResp.text();
+        throw new Error(`Failed to load applications (${appsResp.status}): ${errText.slice(0, 300)}`);
+      }
       const applications = await appsResp.json();
       const auditLog = auditResp.ok ? await auditResp.json() : [];
 
