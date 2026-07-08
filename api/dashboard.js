@@ -161,7 +161,8 @@ module.exports = async function handler(req, res) {
       ]);
       if (!appsResp.ok) {
         const errText = await appsResp.text();
-        throw new Error(`Failed to load applications (${appsResp.status}): ${errText.slice(0, 300)}`);
+        const k = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        throw new Error(`Failed to load applications (${appsResp.status}): ${errText.slice(0, 300)} | DEBUG keyPresent=${!!k} keyLen=${(k || '').length}`);
       }
       const applications = await appsResp.json();
       const auditLog = auditResp.ok ? await auditResp.json() : [];
